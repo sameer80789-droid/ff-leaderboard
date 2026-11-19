@@ -10,6 +10,7 @@ Region handling:
   • Everything else → clientbp.ppmainecoonghj.com
 """
 
+import base64
 import json
 import os
 import re
@@ -279,6 +280,20 @@ def version_config(region="BD", force=False):
         return result
 
 # ==================== AUTH ====================
+# Garena answers HTTP 429 error_too_many_requests when this server's IP asks for too many guest tokens.
+# Every extra try while blocked only makes it worse, so ONE 429 pauses ALL logins for a while.
+_token_block = {"until": 0.0, "streak": 0}
+THROTTLE_BASE = 300          # 5 min, doubles on every further 429 in a row, max 30 min
+
+def _throttle_left():
+    return max(0, _token_block["until"] - time.time())
+
+def _note_throttle():
+    n = _token_block["streak"]
+    _token_block["streak"] = n + 1
+    _token_block["until"] = time.time() + min(THROTTLE_BASE * (2 ** n), 1800)
+    log.warning("Garena rate limit (429) on token grant -> all logins paused for %ds", _throttle_left())
+
 def get_access_token(uid, password, region=""):
     url = "https://100067.connect.garena.com/oauth/guest/token/grant"
     hdrs = {
@@ -299,6 +314,9 @@ def get_access_token(uid, password, region=""):
                 why = f"HTTP 200 without token: keys={sorted(j)[:8]} error={str(j.get('error') or j.get('error_description') or '')[:80]}"
             else:
                 why = f"HTTP {r.status_code} {r.text[:120]!r}"
+                if r.status_code == 429:
+                    _note_throttle()
+                    break
         except Exception as e:
             why = f"exception {type(e).__name__}: {str(e)[:100]}"
             log.warning("get_access_token attempt %d: %s", attempt + 1, e)
@@ -448,7 +466,7 @@ def load_accounts():
             if not isinstance(data, list): data = [data]
             _accounts_cache["data"] = data
             _accounts_cache["t"] = time.time()
-            log.info("Loaded %d accounts", len(data))
+            log.info("Loaded %d accounts (pid %d)", len(data), os.getpid())
             return data
         except Exception as e:
             log.error("accounts.json / FF_ACCOUNTS_JSON load failed: %s", e)
@@ -542,8 +560,25 @@ def _extract_game_server(res, region=""):
         return None
     return FALLBACK_GAME_SERVER
 
+def _jwt_claims(jwt):
+    """Non-secret claims of the JWT, only for the log (which region / server the token belongs to)."""
+    try:
+        part = str(jwt).split(".")[1]
+        j = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+        return {k: j[k] for k in ("lock_region", "noti_region", "country_code", "exp") if k in j}
+    except Exception:
+        return {}
+
 def get_session(region, force=False):
     region = str(region).upper()
+
+    # A token that was issued a moment ago and is still refused is not "expired": logging in again
+    # right away gives the same answer and only burns rate limit. Keep it, the caller tries other servers.
+    if force:
+        with _session_lock:
+            hit = _session_cache.get(region)
+        if hit and time.time() - hit[2] < 90:
+            return hit[0], hit[1], None
 
     if not force:
         with _session_lock:
@@ -572,6 +607,10 @@ def get_session(region, force=False):
                 if hit: return hit[0], hit[1], None
             return None, None, f"Login cooldown for {region} ({int(cd_left)}s)"
 
+        left = _throttle_left()
+        if left > 0:
+            return None, None, f"Garena rate limit (429) - retry in {int(left)}s"
+
         if gap_left > 0:
             time.sleep(gap_left)
 
@@ -580,8 +619,8 @@ def get_session(region, force=False):
             return None, None, f"No account for region {region}"
 
         release_v, game_v, login_url, gop_url, app_ver, _ = version_config(region)
-        log.info("Login: %s uid=%s release=%s game=%s",
-                 region, acc["uid"], release_v, game_v)
+        log.info("Login: %s uid=%s release=%s game=%s pid=%d",
+                 region, acc["uid"], release_v, game_v, os.getpid())
         _mark_login(region)
 
         res = None
@@ -603,6 +642,8 @@ def get_session(region, force=False):
                     break
                 log.warning("MajorLogin FAILED for %s uid=%s (try %d/%d)",
                             region, acc["uid"], attempt, LOGIN_ATTEMPTS)
+            if _throttle_left() > 0:
+                break          # Garena said 429: stop at once, every extra request prolongs the block
             if token_ok and sum(1 for a in load_accounts()
                                 if str(a.get("region", "")).upper() == region) < 2:
                 break          # Garena answered, just not with a JWT: repeating the same request only adds load
@@ -612,16 +653,21 @@ def get_session(region, force=False):
                 acc = next_account(region) or acc
         if not res or "8" not in res:
             _set_cooldown(region)
+            if _throttle_left() > 0:
+                return None, None, f"Garena rate limit (429) - retry in {int(_throttle_left())}s"
             return None, None, "MajorLogin failed" if token_ok else "Auth failed"
 
         jwt = res["8"]["data"] if isinstance(res["8"], dict) else res["8"]
         game_server = _extract_game_server(res, region)
 
         _clear_fail_streak(region)
+        _token_block["streak"] = 0
         with _session_lock:
             _session_cache[region] = (jwt, game_server, time.time())
-        log.info("✅ Session: %s uid=%s game_server=%s",
-                 region, acc["uid"], game_server)
+        log.info("✅ Session: %s uid=%s game_server=%s field10=%s jwt=%s",
+                 region, acc["uid"], game_server,
+                 (res.get("10") or {}).get("data") if isinstance(res.get("10"), dict) else None,
+                 _jwt_claims(jwt))
         return jwt, game_server, None
 
 # ==================== PLAYER INFO (GetPlayerPersonalShow) ====================
@@ -1148,7 +1194,7 @@ REGION_RE = re.compile(r"^[A-Za-z]{2,4}$")
 
 def _is_login_error(msg):
     m = str(msg or "")
-    return m.startswith(("MajorLogin failed", "Auth failed", "Login cooldown", "No account"))
+    return m.startswith(("MajorLogin failed", "Auth failed", "Login cooldown", "No account", "Garena rate limit"))
 
 def _warm_region(region):
     out = []
@@ -1221,7 +1267,7 @@ def background_updater():
                     else:
                         n = _region_fail_streak.get(region, 0) + 1
                         _region_fail_streak[region] = n
-                        delay = min(60 * (2 ** (n - 1)), 900)
+                        delay = max(min(60 * (2 ** (n - 1)), 900), int(_throttle_left()) + 5)
                         _region_next_run[region] = time.time() + delay
                         log.info("Updater: %s retry in %ds (failed %d in a row)", region, delay, n)
         time.sleep(15)
@@ -1252,6 +1298,8 @@ def healthz():
         "cooldowns": {r: int(t - time.time())
                       for r, t in _login_cooldown.items() if t > time.time()},
         "login_errors": dict(_login_errors),
+        "garena_rate_limit_seconds_left": int(_throttle_left()),
+        "pid": os.getpid(),
         "accounts_per_region": _accounts_per_region(),
         "requires_special_account": REQUIRES_SPECIAL_ACCOUNT,
     })
