@@ -78,7 +78,7 @@ LOGIN_COOLDOWN = 30          # first failure; doubles on every further failure (
 LOGIN_COOLDOWN_MAX = 600
 MIN_LOGIN_GAP = 2            # gap between two logins of the SAME region
 GLOBAL_LOGIN_GAP = float(os.environ.get("FF_LOGIN_GAP", "2.5"))   # gap between ANY two logins (burst guard)
-LOGIN_ATTEMPTS = 3           # fresh token + MajorLogin tries before a region is put on cooldown
+LOGIN_ATTEMPTS = 2           # fresh token + MajorLogin tries before a region is put on cooldown
 
 CDN_BASE = "https://cdn.jsdelivr.net/gh/ShahGCreator/icon@main/PNG/{}.png"
 
@@ -279,7 +279,7 @@ def version_config(region="BD", force=False):
         return result
 
 # ==================== AUTH ====================
-def get_access_token(uid, password):
+def get_access_token(uid, password, region=""):
     url = "https://100067.connect.garena.com/oauth/guest/token/grant"
     hdrs = {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -288,6 +288,7 @@ def get_access_token(uid, password):
     }
     data = {"uid": str(uid), "password": password, "response_type": "token",
             "client_type": "2", "client_secret": HEX_KEY, "client_id": "100067"}
+    why = ""
     for attempt in range(3):
         try:
             r = _http.post(url, headers=hdrs, data=data, timeout=TIMEOUT_AUTH)
@@ -295,10 +296,35 @@ def get_access_token(uid, password):
                 j = r.json()
                 if j.get("open_id") and j.get("access_token"):
                     return j["open_id"], j["access_token"], j.get("platform", 4)
+                why = f"HTTP 200 without token: keys={sorted(j)[:8]} error={str(j.get('error') or j.get('error_description') or '')[:80]}"
+            else:
+                why = f"HTTP {r.status_code} {r.text[:120]!r}"
         except Exception as e:
+            why = f"exception {type(e).__name__}: {str(e)[:100]}"
             log.warning("get_access_token attempt %d: %s", attempt + 1, e)
         time.sleep(0.5 * (attempt + 1))
+    log.warning("Token grant %s: %s", region, why)
+    _login_errors[region] = f"guest token grant failed: {why}"
     return None
+
+# The real game client puts its own public IP into the login request. A fixed foreign IP next to a
+# datacenter connection looks fake, so use the server's real egress IP (cached). FF_EGRESS_IP overrides.
+_egress = {"ip": None, "t": 0}
+_IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+def _egress_ip():
+    env = os.environ.get("FF_EGRESS_IP", "").strip()
+    if _IP_RE.match(env): return env
+    if _egress["ip"] and time.time() - _egress["t"] < 3600: return _egress["ip"]
+    try:
+        ip = requests.get("https://api.ipify.org", timeout=3).text.strip()
+        if _IP_RE.match(ip):
+            _egress.update(ip=ip, t=time.time())
+            log.info("Egress IP = %s", ip)
+            return ip
+    except Exception as e:
+        log.warning("egress ip lookup failed: %s", e)
+    _egress.update(ip="104.28.197.151", t=time.time() - 3000)   # old constant, retry lookup in ~10 min
+    return _egress["ip"]
 
 def get_payload(access_token, open_id, platform, game_version, region="PK", lang_code=None):
     device_id = f"Google|{uuid.uuid4()}"
@@ -314,7 +340,7 @@ def get_payload(access_token, open_id, platform, game_version, region="PK", lang
         "15": "ARMv7 VFPv3 NEON | 2002 | 8",
         "16": 3702, "17": "Mali-G52",
         "18": "OpenGL ES 3.2 v1.r38p1-01bet0-mbs2v41_0.6d20ec041e51b2f2d25dfc265586ebe8",
-        "19": device_id, "20": "104.28.197.151", "21": lang,
+        "19": device_id, "20": _egress_ip(), "21": lang,
         "22": f"{open_id}", "23": f"{platform}", "24": "Handheld",
         "25": "samsung SM-E135F", "26": reg_code,
         "29": f"{access_token}", "30": 1, "42": "Cellular",
@@ -562,11 +588,10 @@ def get_session(region, force=False):
         token_ok = False
         for attempt in range(1, LOGIN_ATTEMPTS + 1):
             _global_login_gate()
-            tg = get_access_token(acc["uid"], acc["password"])
+            tg = get_access_token(acc["uid"], acc["password"], region=region)
             if not tg:
                 log.warning("get_access_token FAILED for %s uid=%s (try %d/%d)",
                             region, acc["uid"], attempt, LOGIN_ATTEMPTS)
-                _login_errors[region] = "guest token grant failed (wrong uid/password or Garena refused)"
             else:
                 token_ok = True
                 open_id, access_token, platform = tg
@@ -578,8 +603,11 @@ def get_session(region, force=False):
                     break
                 log.warning("MajorLogin FAILED for %s uid=%s (try %d/%d)",
                             region, acc["uid"], attempt, LOGIN_ATTEMPTS)
+            if token_ok and sum(1 for a in load_accounts()
+                                if str(a.get("region", "")).upper() == region) < 2:
+                break          # Garena answered, just not with a JWT: repeating the same request only adds load
             if attempt < LOGIN_ATTEMPTS:
-                time.sleep(1.5 * attempt)
+                time.sleep(3 * attempt)
                 # try the next account of this region, if there is one
                 acc = next_account(region) or acc
         if not res or "8" not in res:
@@ -1050,8 +1078,12 @@ def _is_fresh(entry, season, mode="BR"):
     ttl = CURRENT_TTL if season == cur else PAST_TTL
     return bool(entry) and time.time() - entry[1] < ttl
 
+_region_last_req = {}     # region -> last time a visitor asked for it
+
 def get_leaderboard(season, region, mode="BR", force=False):
     mode = (mode or "BR").upper()
+    if not force:
+        _region_last_req[region] = time.time()
     key = (mode, region, season)
     with _lb_guard:
         hit = _lb_cache.get(key)
@@ -1137,6 +1169,22 @@ def _warm_region(region):
 _region_next_run = {}     # region -> when the updater should try it again
 _region_fail_streak = {}
 
+WARM_MODE = os.environ.get("FF_WARM", "auto").strip().upper()   # auto | all | PK,BD,...
+WARM_IDLE = 6 * 3600
+
+def _warm_targets():
+    """Logging in to all 14 regions at every boot is a burst Garena throttles. By default only the
+    default region and regions a visitor opened in the last 6 h are kept warm; the rest log in on demand."""
+    have = {str(a.get("region", "PK")).upper() for a in load_accounts()}
+    if WARM_MODE == "ALL":
+        return have
+    if WARM_MODE not in ("", "AUTO"):
+        return {r.strip() for r in WARM_MODE.split(",") if r.strip()} & have
+    now = time.time()
+    out = {default_region()} & have
+    out |= {r for r, t in _region_last_req.items() if now - t < WARM_IDLE and r in have}
+    return out
+
 def _region_order(regions):
     """Default region (the one visitors see first) is warmed first."""
     first = default_region()
@@ -1149,7 +1197,7 @@ def background_updater():
     time.sleep(3)
     while True:
         now = time.time()
-        regions = [r for r in _region_order({str(a.get("region", "PK")).upper() for a in load_accounts()})
+        regions = [r for r in _region_order(_warm_targets())
                    if _region_next_run.get(r, 0) <= now]
         if regions:
             with ThreadPoolExecutor(max_workers=3) as pool:

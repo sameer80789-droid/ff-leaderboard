@@ -21,3 +21,7 @@ Tips:
    guest account at the same time can make Garena refuse one of them.
  - Give each region 2+ accounts in FF_ACCOUNTS_JSON; a failed login automatically tries the next one.
  - Env FF_LOGIN_GAP (default 2.5) = seconds between any two logins. Raise it if Garena still refuses.
+
+Env options: FF_WARM = auto (default: keep only default region + recently opened regions warm) | all | PK,BD,...
+             FF_EGRESS_IP = your server's public IP, if the automatic lookup is blocked.
+Tip: on Render choose the SINGAPORE region when creating the service (closest to PK/BD/ID/VN/TH/SG/ME).
