@@ -10,18 +10,3 @@ HOST THIS PROJECT ON RENDER
 
 Free Render web services sleep after 15 minutes without traffic and may take about
 a minute to wake up. This is not 24/7 always-on hosting.
-
------ IF A REGION SHOWS "MajorLogin failed" -----
-Open  https://YOUR-APP.onrender.com/healthz  -> "login_errors" shows what Garena actually answered
-for each region, and "cooldowns" shows when the next try happens (30s, 60s, 120s ... max 10 min).
-Also check the Render logs for lines starting with "MajorLogin <REGION>:".
-
-Tips:
- - Do NOT run the same accounts on your PC while Render is running. Two servers logging into the same
-   guest account at the same time can make Garena refuse one of them.
- - Give each region 2+ accounts in FF_ACCOUNTS_JSON; a failed login automatically tries the next one.
- - Env FF_LOGIN_GAP (default 2.5) = seconds between any two logins. Raise it if Garena still refuses.
-
-Env options: FF_WARM = auto (default: keep only default region + recently opened regions warm) | all | PK,BD,...
-             FF_EGRESS_IP = your server's public IP, if the automatic lookup is blocked.
-Tip: on Render choose the SINGAPORE region when creating the service (closest to PK/BD/ID/VN/TH/SG/ME).

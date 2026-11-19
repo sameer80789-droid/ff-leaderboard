@@ -10,7 +10,6 @@ Region handling:
   • Everything else → clientbp.ppmainecoonghj.com
 """
 
-import base64
 import json
 import os
 import re
@@ -75,11 +74,8 @@ EMPTY_TTL = 5 * 60           # empty result sirf 5 min yaad rakho
 SESSION_TTL = 20 * 60
 PROFILE_TTL = 60
 VERSION_TTL = 60 * 60
-LOGIN_COOLDOWN = 30          # first failure; doubles on every further failure (see _set_cooldown)
-LOGIN_COOLDOWN_MAX = 600
-MIN_LOGIN_GAP = 2            # gap between two logins of the SAME region
-GLOBAL_LOGIN_GAP = float(os.environ.get("FF_LOGIN_GAP", "2.5"))   # gap between ANY two logins (burst guard)
-LOGIN_ATTEMPTS = 2           # fresh token + MajorLogin tries before a region is put on cooldown
+LOGIN_COOLDOWN = 30
+MIN_LOGIN_GAP = 2
 
 CDN_BASE = "https://cdn.jsdelivr.net/gh/ShahGCreator/icon@main/PNG/{}.png"
 
@@ -280,21 +276,7 @@ def version_config(region="BD", force=False):
         return result
 
 # ==================== AUTH ====================
-# Garena answers HTTP 429 error_too_many_requests when this server's IP asks for too many guest tokens.
-# Every extra try while blocked only makes it worse, so ONE 429 pauses ALL logins for a while.
-_token_block = {"until": 0.0, "streak": 0}
-THROTTLE_BASE = 300          # 5 min, doubles on every further 429 in a row, max 30 min
-
-def _throttle_left():
-    return max(0, _token_block["until"] - time.time())
-
-def _note_throttle():
-    n = _token_block["streak"]
-    _token_block["streak"] = n + 1
-    _token_block["until"] = time.time() + min(THROTTLE_BASE * (2 ** n), 1800)
-    log.warning("Garena rate limit (429) on token grant -> all logins paused for %ds", _throttle_left())
-
-def get_access_token(uid, password, region=""):
+def get_access_token(uid, password):
     url = "https://100067.connect.garena.com/oauth/guest/token/grant"
     hdrs = {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -303,7 +285,6 @@ def get_access_token(uid, password, region=""):
     }
     data = {"uid": str(uid), "password": password, "response_type": "token",
             "client_type": "2", "client_secret": HEX_KEY, "client_id": "100067"}
-    why = ""
     for attempt in range(3):
         try:
             r = _http.post(url, headers=hdrs, data=data, timeout=TIMEOUT_AUTH)
@@ -311,38 +292,10 @@ def get_access_token(uid, password, region=""):
                 j = r.json()
                 if j.get("open_id") and j.get("access_token"):
                     return j["open_id"], j["access_token"], j.get("platform", 4)
-                why = f"HTTP 200 without token: keys={sorted(j)[:8]} error={str(j.get('error') or j.get('error_description') or '')[:80]}"
-            else:
-                why = f"HTTP {r.status_code} {r.text[:120]!r}"
-                if r.status_code == 429:
-                    _note_throttle()
-                    break
         except Exception as e:
-            why = f"exception {type(e).__name__}: {str(e)[:100]}"
             log.warning("get_access_token attempt %d: %s", attempt + 1, e)
         time.sleep(0.5 * (attempt + 1))
-    log.warning("Token grant %s: %s", region, why)
-    _login_errors[region] = f"guest token grant failed: {why}"
     return None
-
-# The real game client puts its own public IP into the login request. A fixed foreign IP next to a
-# datacenter connection looks fake, so use the server's real egress IP (cached). FF_EGRESS_IP overrides.
-_egress = {"ip": None, "t": 0}
-_IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
-def _egress_ip():
-    env = os.environ.get("FF_EGRESS_IP", "").strip()
-    if _IP_RE.match(env): return env
-    if _egress["ip"] and time.time() - _egress["t"] < 3600: return _egress["ip"]
-    try:
-        ip = requests.get("https://api.ipify.org", timeout=3).text.strip()
-        if _IP_RE.match(ip):
-            _egress.update(ip=ip, t=time.time())
-            log.info("Egress IP = %s", ip)
-            return ip
-    except Exception as e:
-        log.warning("egress ip lookup failed: %s", e)
-    _egress.update(ip="104.28.197.151", t=time.time() - 3000)   # old constant, retry lookup in ~10 min
-    return _egress["ip"]
 
 def get_payload(access_token, open_id, platform, game_version, region="PK", lang_code=None):
     device_id = f"Google|{uuid.uuid4()}"
@@ -358,7 +311,7 @@ def get_payload(access_token, open_id, platform, game_version, region="PK", lang
         "15": "ARMv7 VFPv3 NEON | 2002 | 8",
         "16": 3702, "17": "Mali-G52",
         "18": "OpenGL ES 3.2 v1.r38p1-01bet0-mbs2v41_0.6d20ec041e51b2f2d25dfc265586ebe8",
-        "19": device_id, "20": _egress_ip(), "21": lang,
+        "19": device_id, "20": "104.28.197.151", "21": lang,
         "22": f"{open_id}", "23": f"{platform}", "24": "Handheld",
         "25": "samsung SM-E135F", "26": reg_code,
         "29": f"{access_token}", "30": 1, "42": "Cellular",
@@ -384,29 +337,7 @@ def get_payload(access_token, open_id, platform, game_version, region="PK", lang
     }
     return bytes.fromhex(encrypt_aes(create_proto(major_login).hex()))
 
-_login_errors = {}            # region -> last MajorLogin failure description (shown on /healthz)
-
-def _describe_resp(content):
-    """Short, secret-free description of a server reply, so a failed login can be diagnosed from logs."""
-    try:
-        d = decode_protobuf(content) or {}
-    except Exception:
-        d = {}
-    parts = []
-    for k, v in list(d.items())[:12]:
-        if isinstance(v, int):
-            parts.append(f"{k}={v}")
-        elif isinstance(v, str) and len(v) <= 60 and not v.startswith("eyJ"):
-            parts.append(f"{k}={v!r}")
-        else:
-            parts.append(f"{k}=<{type(v).__name__}>")
-    txt = ""
-    head = content[:80]
-    if head and all(32 <= b < 127 or b in (9, 10, 13) for b in head):
-        txt = f" text={head.decode('ascii')!r}"
-    return f"len={len(content)} head={content[:20].hex()} fields[{', '.join(parts)}]{txt}"
-
-def major_login(payload, login_url, release_version, region=""):
+def major_login(payload, login_url, release_version):
     url = f"{login_url.rstrip('/')}/MajorLogin"
     req_headers = {
         "Accept": "*/*", "Authorization": "Bearer ",
@@ -419,9 +350,7 @@ def major_login(payload, login_url, release_version, region=""):
     try:
         r = _http.post(url, headers=req_headers, data=payload, timeout=TIMEOUT_MAJOR)
         if r.status_code != 200:
-            why = f"HTTP {r.status_code} {_describe_resp(r.content)}"
-            log.warning("MajorLogin %s: %s", region, why)
-            _login_errors[region] = why
+            log.warning("MajorLogin HTTP %s body=%r", r.status_code, r.content[:100])
             return None
         content = r.content
         best = None; best_score = -1
@@ -436,16 +365,10 @@ def major_login(payload, login_url, release_version, region=""):
                 best = cand; best_score = score
             if has_jwt and has_url: break
         if best and "8" in best:
-            _login_errors.pop(region, None)
             return {str(k): {"data": v} for k, v in best.items()}
-        why = f"HTTP 200 but no JWT in reply: {_describe_resp(content)}"
-        log.warning("MajorLogin %s: %s", region, why)
-        _login_errors[region] = why
         return None
     except Exception as e:
-        why = f"exception {type(e).__name__}: {str(e)[:150]}"
-        log.warning("MajorLogin %s: %s", region, why)
-        _login_errors[region] = why
+        log.warning("MajorLogin exception: %s", e)
         return None
 
 # ==================== ACCOUNTS ====================
@@ -466,7 +389,7 @@ def load_accounts():
             if not isinstance(data, list): data = [data]
             _accounts_cache["data"] = data
             _accounts_cache["t"] = time.time()
-            log.info("Loaded %d accounts (pid %d)", len(data), os.getpid())
+            log.info("Loaded %d accounts", len(data))
             return data
         except Exception as e:
             log.error("accounts.json / FF_ACCOUNTS_JSON load failed: %s", e)
@@ -518,29 +441,9 @@ def _cooldown_state(region):
         gap_left = max(0, MIN_LOGIN_GAP - (now - _last_login_at.get(region, 0)))
         return cd_left, gap_left
 
-_login_fail_streak = {}
-_global_login_lock = threading.Lock()
-_global_last_login = [0.0]
-
 def _set_cooldown(region):
-    """Cooldown doubles with every failed login in a row (30s, 60s, 120s ... max 10 min)."""
     with _cooldown_lock:
-        n = _login_fail_streak.get(region, 0)
-        _login_fail_streak[region] = n + 1
-        _login_cooldown[region] = time.time() + min(LOGIN_COOLDOWN * (2 ** n), LOGIN_COOLDOWN_MAX)
-
-def _clear_fail_streak(region):
-    with _cooldown_lock:
-        _login_fail_streak.pop(region, None)
-        _login_cooldown.pop(region, None)
-
-def _global_login_gate():
-    """All regions log in from ONE server IP. Never send a burst: keep a small gap between any two logins."""
-    with _global_login_lock:
-        wait = GLOBAL_LOGIN_GAP - (time.time() - _global_last_login[0])
-        if wait > 0:
-            time.sleep(wait)
-        _global_last_login[0] = time.time()
+        _login_cooldown[region] = time.time() + LOGIN_COOLDOWN
 
 def _mark_login(region):
     with _cooldown_lock:
@@ -560,25 +463,8 @@ def _extract_game_server(res, region=""):
         return None
     return FALLBACK_GAME_SERVER
 
-def _jwt_claims(jwt):
-    """Non-secret claims of the JWT, only for the log (which region / server the token belongs to)."""
-    try:
-        part = str(jwt).split(".")[1]
-        j = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
-        return {k: j[k] for k in ("lock_region", "noti_region", "country_code", "exp") if k in j}
-    except Exception:
-        return {}
-
 def get_session(region, force=False):
     region = str(region).upper()
-
-    # A token that was issued a moment ago and is still refused is not "expired": logging in again
-    # right away gives the same answer and only burns rate limit. Keep it, the caller tries other servers.
-    if force:
-        with _session_lock:
-            hit = _session_cache.get(region)
-        if hit and time.time() - hit[2] < 90:
-            return hit[0], hit[1], None
 
     if not force:
         with _session_lock:
@@ -607,10 +493,6 @@ def get_session(region, force=False):
                 if hit: return hit[0], hit[1], None
             return None, None, f"Login cooldown for {region} ({int(cd_left)}s)"
 
-        left = _throttle_left()
-        if left > 0:
-            return None, None, f"Garena rate limit (429) - retry in {int(left)}s"
-
         if gap_left > 0:
             time.sleep(gap_left)
 
@@ -619,55 +501,33 @@ def get_session(region, force=False):
             return None, None, f"No account for region {region}"
 
         release_v, game_v, login_url, gop_url, app_ver, _ = version_config(region)
-        log.info("Login: %s uid=%s release=%s game=%s pid=%d",
-                 region, acc["uid"], release_v, game_v, os.getpid())
+        log.info("Login: %s uid=%s release=%s game=%s",
+                 region, acc["uid"], release_v, game_v)
         _mark_login(region)
 
-        res = None
-        token_ok = False
-        for attempt in range(1, LOGIN_ATTEMPTS + 1):
-            _global_login_gate()
-            tg = get_access_token(acc["uid"], acc["password"], region=region)
-            if not tg:
-                log.warning("get_access_token FAILED for %s uid=%s (try %d/%d)",
-                            region, acc["uid"], attempt, LOGIN_ATTEMPTS)
-            else:
-                token_ok = True
-                open_id, access_token, platform = tg
-                res = major_login(
-                    get_payload(access_token, open_id, platform, game_v, region=region),
-                    login_url, release_v, region=region
-                )
-                if res and "8" in res:
-                    break
-                log.warning("MajorLogin FAILED for %s uid=%s (try %d/%d)",
-                            region, acc["uid"], attempt, LOGIN_ATTEMPTS)
-            if _throttle_left() > 0:
-                break          # Garena said 429: stop at once, every extra request prolongs the block
-            if token_ok and sum(1 for a in load_accounts()
-                                if str(a.get("region", "")).upper() == region) < 2:
-                break          # Garena answered, just not with a JWT: repeating the same request only adds load
-            if attempt < LOGIN_ATTEMPTS:
-                time.sleep(3 * attempt)
-                # try the next account of this region, if there is one
-                acc = next_account(region) or acc
-        if not res or "8" not in res:
+        tg = get_access_token(acc["uid"], acc["password"])
+        if not tg:
+            log.warning("get_access_token FAILED for %s", region)
             _set_cooldown(region)
-            if _throttle_left() > 0:
-                return None, None, f"Garena rate limit (429) - retry in {int(_throttle_left())}s"
-            return None, None, "MajorLogin failed" if token_ok else "Auth failed"
+            return None, None, "Auth failed"
+
+        open_id, access_token, platform = tg
+        res = major_login(
+            get_payload(access_token, open_id, platform, game_v, region=region),
+            login_url, release_v
+        )
+        if not res or "8" not in res:
+            log.warning("MajorLogin FAILED for %s uid=%s", region, acc["uid"])
+            _set_cooldown(region)
+            return None, None, "MajorLogin failed"
 
         jwt = res["8"]["data"] if isinstance(res["8"], dict) else res["8"]
         game_server = _extract_game_server(res, region)
 
-        _clear_fail_streak(region)
-        _token_block["streak"] = 0
         with _session_lock:
             _session_cache[region] = (jwt, game_server, time.time())
-        log.info("✅ Session: %s uid=%s game_server=%s field10=%s jwt=%s",
-                 region, acc["uid"], game_server,
-                 (res.get("10") or {}).get("data") if isinstance(res.get("10"), dict) else None,
-                 _jwt_claims(jwt))
+        log.info("✅ Session: %s uid=%s game_server=%s",
+                 region, acc["uid"], game_server)
         return jwt, game_server, None
 
 # ==================== PLAYER INFO (GetPlayerPersonalShow) ====================
@@ -1124,12 +984,8 @@ def _is_fresh(entry, season, mode="BR"):
     ttl = CURRENT_TTL if season == cur else PAST_TTL
     return bool(entry) and time.time() - entry[1] < ttl
 
-_region_last_req = {}     # region -> last time a visitor asked for it
-
 def get_leaderboard(season, region, mode="BR", force=False):
     mode = (mode or "BR").upper()
-    if not force:
-        _region_last_req[region] = time.time()
     key = (mode, region, season)
     with _lb_guard:
         hit = _lb_cache.get(key)
@@ -1192,85 +1048,43 @@ def _cache_cleanup():
 _updater_error = None
 REGION_RE = re.compile(r"^[A-Za-z]{2,4}$")
 
-def _is_login_error(msg):
-    m = str(msg or "")
-    return m.startswith(("MajorLogin failed", "Auth failed", "Login cooldown", "No account", "Garena rate limit"))
-
 def _warm_region(region):
     out = []
     for mode, cur in [("BR", CURRENT_SEASON), ("CS", CURRENT_CS_SEASON)]:
         try:
             data = get_leaderboard(cur, region, mode=mode, force=True)
             ok = data.get("status") == "success"
-            info = len(data.get("players", [])) if ok else data.get("error")
-            out.append((mode, cur, region, ok, info, data.get("server", "")))
-            # Login itself is broken -> trying the second mode would only repeat the same failure.
-            if not ok and _is_login_error(info):
-                out.append(("CS" if mode == "BR" else mode, CURRENT_CS_SEASON, region, False, info, ""))
-                break
+            out.append((mode, cur, region, ok,
+                        len(data.get("players", [])) if ok else data.get("error"),
+                        data.get("server", "")))
         except Exception as e:
             out.append((mode, cur, region, False, str(e), ""))
     return out
 
-_region_next_run = {}     # region -> when the updater should try it again
-_region_fail_streak = {}
-
-WARM_MODE = os.environ.get("FF_WARM", "auto").strip().upper()   # auto | all | PK,BD,...
-WARM_IDLE = 6 * 3600
-
-def _warm_targets():
-    """Logging in to all 14 regions at every boot is a burst Garena throttles. By default only the
-    default region and regions a visitor opened in the last 6 h are kept warm; the rest log in on demand."""
-    have = {str(a.get("region", "PK")).upper() for a in load_accounts()}
-    if WARM_MODE == "ALL":
-        return have
-    if WARM_MODE not in ("", "AUTO"):
-        return {r.strip() for r in WARM_MODE.split(",") if r.strip()} & have
-    now = time.time()
-    out = {default_region()} & have
-    out |= {r for r, t in _region_last_req.items() if now - t < WARM_IDLE and r in have}
-    return out
-
-def _region_order(regions):
-    """Default region (the one visitors see first) is warmed first."""
-    first = default_region()
-    return sorted(regions, key=lambda r: (r != first, r))
-
 def background_updater():
-    """Every region is refreshed every CURRENT_TTL. A region that fails is retried with a growing delay
-    (1, 2, 4 ... 15 min) instead of hammering Garena, and one broken region never blocks the others."""
     global _updater_error
-    time.sleep(3)
+    time.sleep(5)
+    fail_count = 0
     while True:
-        now = time.time()
-        regions = [r for r in _region_order(_warm_targets())
-                   if _region_next_run.get(r, 0) <= now]
-        if regions:
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                futures = {pool.submit(_warm_region, r): r for r in regions}
-                for fut in as_completed(futures):
-                    region = futures[fut]
-                    results = fut.result()
-                    all_ok = True
-                    for mode, cur, reg, ok, info, server in results:
-                        if ok:
-                            _updater_error = None
-                            log.info("✅ Updater OK: %s S%d (%s) → %d players [%s]",
-                                     mode, cur, reg, info, server)
-                        else:
-                            all_ok = False
-                            _updater_error = info
-                            log.warning("Updater FAIL: %s S%d (%s) → %s", mode, cur, reg, info)
-                    if all_ok:
-                        _region_fail_streak.pop(region, None)
-                        _region_next_run[region] = time.time() + CURRENT_TTL
+        regions = sorted({str(a.get("region", "PK")).upper() for a in load_accounts()})
+        any_ok = False
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(_warm_region, r): r for r in regions}
+            for fut in as_completed(futures):
+                for mode, cur, region, ok, info, server in fut.result():
+                    if ok:
+                        any_ok = True
+                        _updater_error = None
+                        log.info("✅ Updater OK: %s S%d (%s) → %d players [%s]",
+                                 mode, cur, region, info, server)
                     else:
-                        n = _region_fail_streak.get(region, 0) + 1
-                        _region_fail_streak[region] = n
-                        delay = max(min(60 * (2 ** (n - 1)), 900), int(_throttle_left()) + 5)
-                        _region_next_run[region] = time.time() + delay
-                        log.info("Updater: %s retry in %ds (failed %d in a row)", region, delay, n)
-        time.sleep(15)
+                        _updater_error = info
+                        log.warning("Updater FAIL: %s S%d (%s) → %s",
+                                    mode, cur, region, info)
+        fail_count = 0 if any_ok else fail_count + 1
+        wait = CURRENT_TTL * min(2 ** fail_count, 6) if fail_count else CURRENT_TTL
+        log.info("Updater sleeping %ds", wait)
+        time.sleep(wait)
 
 @app.route("/")
 def home():
@@ -1279,13 +1093,6 @@ def home():
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
     return resp
-
-def _accounts_per_region():
-    out = {}
-    for a in load_accounts():
-        r = str(a.get("region", "")).upper()
-        out[r] = out.get(r, 0) + 1
-    return out
 
 @app.route("/healthz")
 def healthz():
@@ -1297,10 +1104,6 @@ def healthz():
                      for r, v in _session_cache.items()},
         "cooldowns": {r: int(t - time.time())
                       for r, t in _login_cooldown.items() if t > time.time()},
-        "login_errors": dict(_login_errors),
-        "garena_rate_limit_seconds_left": int(_throttle_left()),
-        "pid": os.getpid(),
-        "accounts_per_region": _accounts_per_region(),
         "requires_special_account": REQUIRES_SPECIAL_ACCOUNT,
     })
 
