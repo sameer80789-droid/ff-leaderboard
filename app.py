@@ -74,8 +74,11 @@ EMPTY_TTL = 5 * 60           # empty result sirf 5 min yaad rakho
 SESSION_TTL = 20 * 60
 PROFILE_TTL = 60
 VERSION_TTL = 60 * 60
-LOGIN_COOLDOWN = 30
-MIN_LOGIN_GAP = 2
+LOGIN_COOLDOWN = 30          # first failure; doubles on every further failure (see _set_cooldown)
+LOGIN_COOLDOWN_MAX = 600
+MIN_LOGIN_GAP = 2            # gap between two logins of the SAME region
+GLOBAL_LOGIN_GAP = float(os.environ.get("FF_LOGIN_GAP", "2.5"))   # gap between ANY two logins (burst guard)
+LOGIN_ATTEMPTS = 3           # fresh token + MajorLogin tries before a region is put on cooldown
 
 CDN_BASE = "https://cdn.jsdelivr.net/gh/ShahGCreator/icon@main/PNG/{}.png"
 
@@ -337,7 +340,29 @@ def get_payload(access_token, open_id, platform, game_version, region="PK", lang
     }
     return bytes.fromhex(encrypt_aes(create_proto(major_login).hex()))
 
-def major_login(payload, login_url, release_version):
+_login_errors = {}            # region -> last MajorLogin failure description (shown on /healthz)
+
+def _describe_resp(content):
+    """Short, secret-free description of a server reply, so a failed login can be diagnosed from logs."""
+    try:
+        d = decode_protobuf(content) or {}
+    except Exception:
+        d = {}
+    parts = []
+    for k, v in list(d.items())[:12]:
+        if isinstance(v, int):
+            parts.append(f"{k}={v}")
+        elif isinstance(v, str) and len(v) <= 60 and not v.startswith("eyJ"):
+            parts.append(f"{k}={v!r}")
+        else:
+            parts.append(f"{k}=<{type(v).__name__}>")
+    txt = ""
+    head = content[:80]
+    if head and all(32 <= b < 127 or b in (9, 10, 13) for b in head):
+        txt = f" text={head.decode('ascii')!r}"
+    return f"len={len(content)} head={content[:20].hex()} fields[{', '.join(parts)}]{txt}"
+
+def major_login(payload, login_url, release_version, region=""):
     url = f"{login_url.rstrip('/')}/MajorLogin"
     req_headers = {
         "Accept": "*/*", "Authorization": "Bearer ",
@@ -350,7 +375,9 @@ def major_login(payload, login_url, release_version):
     try:
         r = _http.post(url, headers=req_headers, data=payload, timeout=TIMEOUT_MAJOR)
         if r.status_code != 200:
-            log.warning("MajorLogin HTTP %s body=%r", r.status_code, r.content[:100])
+            why = f"HTTP {r.status_code} {_describe_resp(r.content)}"
+            log.warning("MajorLogin %s: %s", region, why)
+            _login_errors[region] = why
             return None
         content = r.content
         best = None; best_score = -1
@@ -365,10 +392,16 @@ def major_login(payload, login_url, release_version):
                 best = cand; best_score = score
             if has_jwt and has_url: break
         if best and "8" in best:
+            _login_errors.pop(region, None)
             return {str(k): {"data": v} for k, v in best.items()}
+        why = f"HTTP 200 but no JWT in reply: {_describe_resp(content)}"
+        log.warning("MajorLogin %s: %s", region, why)
+        _login_errors[region] = why
         return None
     except Exception as e:
-        log.warning("MajorLogin exception: %s", e)
+        why = f"exception {type(e).__name__}: {str(e)[:150]}"
+        log.warning("MajorLogin %s: %s", region, why)
+        _login_errors[region] = why
         return None
 
 # ==================== ACCOUNTS ====================
@@ -441,9 +474,29 @@ def _cooldown_state(region):
         gap_left = max(0, MIN_LOGIN_GAP - (now - _last_login_at.get(region, 0)))
         return cd_left, gap_left
 
+_login_fail_streak = {}
+_global_login_lock = threading.Lock()
+_global_last_login = [0.0]
+
 def _set_cooldown(region):
+    """Cooldown doubles with every failed login in a row (30s, 60s, 120s ... max 10 min)."""
     with _cooldown_lock:
-        _login_cooldown[region] = time.time() + LOGIN_COOLDOWN
+        n = _login_fail_streak.get(region, 0)
+        _login_fail_streak[region] = n + 1
+        _login_cooldown[region] = time.time() + min(LOGIN_COOLDOWN * (2 ** n), LOGIN_COOLDOWN_MAX)
+
+def _clear_fail_streak(region):
+    with _cooldown_lock:
+        _login_fail_streak.pop(region, None)
+        _login_cooldown.pop(region, None)
+
+def _global_login_gate():
+    """All regions log in from ONE server IP. Never send a burst: keep a small gap between any two logins."""
+    with _global_login_lock:
+        wait = GLOBAL_LOGIN_GAP - (time.time() - _global_last_login[0])
+        if wait > 0:
+            time.sleep(wait)
+        _global_last_login[0] = time.time()
 
 def _mark_login(region):
     with _cooldown_lock:
@@ -505,25 +558,38 @@ def get_session(region, force=False):
                  region, acc["uid"], release_v, game_v)
         _mark_login(region)
 
-        tg = get_access_token(acc["uid"], acc["password"])
-        if not tg:
-            log.warning("get_access_token FAILED for %s", region)
-            _set_cooldown(region)
-            return None, None, "Auth failed"
-
-        open_id, access_token, platform = tg
-        res = major_login(
-            get_payload(access_token, open_id, platform, game_v, region=region),
-            login_url, release_v
-        )
+        res = None
+        token_ok = False
+        for attempt in range(1, LOGIN_ATTEMPTS + 1):
+            _global_login_gate()
+            tg = get_access_token(acc["uid"], acc["password"])
+            if not tg:
+                log.warning("get_access_token FAILED for %s uid=%s (try %d/%d)",
+                            region, acc["uid"], attempt, LOGIN_ATTEMPTS)
+                _login_errors[region] = "guest token grant failed (wrong uid/password or Garena refused)"
+            else:
+                token_ok = True
+                open_id, access_token, platform = tg
+                res = major_login(
+                    get_payload(access_token, open_id, platform, game_v, region=region),
+                    login_url, release_v, region=region
+                )
+                if res and "8" in res:
+                    break
+                log.warning("MajorLogin FAILED for %s uid=%s (try %d/%d)",
+                            region, acc["uid"], attempt, LOGIN_ATTEMPTS)
+            if attempt < LOGIN_ATTEMPTS:
+                time.sleep(1.5 * attempt)
+                # try the next account of this region, if there is one
+                acc = next_account(region) or acc
         if not res or "8" not in res:
-            log.warning("MajorLogin FAILED for %s uid=%s", region, acc["uid"])
             _set_cooldown(region)
-            return None, None, "MajorLogin failed"
+            return None, None, "MajorLogin failed" if token_ok else "Auth failed"
 
         jwt = res["8"]["data"] if isinstance(res["8"], dict) else res["8"]
         game_server = _extract_game_server(res, region)
 
+        _clear_fail_streak(region)
         with _session_lock:
             _session_cache[region] = (jwt, game_server, time.time())
         log.info("✅ Session: %s uid=%s game_server=%s",
@@ -1048,43 +1114,69 @@ def _cache_cleanup():
 _updater_error = None
 REGION_RE = re.compile(r"^[A-Za-z]{2,4}$")
 
+def _is_login_error(msg):
+    m = str(msg or "")
+    return m.startswith(("MajorLogin failed", "Auth failed", "Login cooldown", "No account"))
+
 def _warm_region(region):
     out = []
     for mode, cur in [("BR", CURRENT_SEASON), ("CS", CURRENT_CS_SEASON)]:
         try:
             data = get_leaderboard(cur, region, mode=mode, force=True)
             ok = data.get("status") == "success"
-            out.append((mode, cur, region, ok,
-                        len(data.get("players", [])) if ok else data.get("error"),
-                        data.get("server", "")))
+            info = len(data.get("players", [])) if ok else data.get("error")
+            out.append((mode, cur, region, ok, info, data.get("server", "")))
+            # Login itself is broken -> trying the second mode would only repeat the same failure.
+            if not ok and _is_login_error(info):
+                out.append(("CS" if mode == "BR" else mode, CURRENT_CS_SEASON, region, False, info, ""))
+                break
         except Exception as e:
             out.append((mode, cur, region, False, str(e), ""))
     return out
 
+_region_next_run = {}     # region -> when the updater should try it again
+_region_fail_streak = {}
+
+def _region_order(regions):
+    """Default region (the one visitors see first) is warmed first."""
+    first = default_region()
+    return sorted(regions, key=lambda r: (r != first, r))
+
 def background_updater():
+    """Every region is refreshed every CURRENT_TTL. A region that fails is retried with a growing delay
+    (1, 2, 4 ... 15 min) instead of hammering Garena, and one broken region never blocks the others."""
     global _updater_error
-    time.sleep(5)
-    fail_count = 0
+    time.sleep(3)
     while True:
-        regions = sorted({str(a.get("region", "PK")).upper() for a in load_accounts()})
-        any_ok = False
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {pool.submit(_warm_region, r): r for r in regions}
-            for fut in as_completed(futures):
-                for mode, cur, region, ok, info, server in fut.result():
-                    if ok:
-                        any_ok = True
-                        _updater_error = None
-                        log.info("✅ Updater OK: %s S%d (%s) → %d players [%s]",
-                                 mode, cur, region, info, server)
+        now = time.time()
+        regions = [r for r in _region_order({str(a.get("region", "PK")).upper() for a in load_accounts()})
+                   if _region_next_run.get(r, 0) <= now]
+        if regions:
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                futures = {pool.submit(_warm_region, r): r for r in regions}
+                for fut in as_completed(futures):
+                    region = futures[fut]
+                    results = fut.result()
+                    all_ok = True
+                    for mode, cur, reg, ok, info, server in results:
+                        if ok:
+                            _updater_error = None
+                            log.info("✅ Updater OK: %s S%d (%s) → %d players [%s]",
+                                     mode, cur, reg, info, server)
+                        else:
+                            all_ok = False
+                            _updater_error = info
+                            log.warning("Updater FAIL: %s S%d (%s) → %s", mode, cur, reg, info)
+                    if all_ok:
+                        _region_fail_streak.pop(region, None)
+                        _region_next_run[region] = time.time() + CURRENT_TTL
                     else:
-                        _updater_error = info
-                        log.warning("Updater FAIL: %s S%d (%s) → %s",
-                                    mode, cur, region, info)
-        fail_count = 0 if any_ok else fail_count + 1
-        wait = CURRENT_TTL * min(2 ** fail_count, 6) if fail_count else CURRENT_TTL
-        log.info("Updater sleeping %ds", wait)
-        time.sleep(wait)
+                        n = _region_fail_streak.get(region, 0) + 1
+                        _region_fail_streak[region] = n
+                        delay = min(60 * (2 ** (n - 1)), 900)
+                        _region_next_run[region] = time.time() + delay
+                        log.info("Updater: %s retry in %ds (failed %d in a row)", region, delay, n)
+        time.sleep(15)
 
 @app.route("/")
 def home():
@@ -1093,6 +1185,13 @@ def home():
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
     return resp
+
+def _accounts_per_region():
+    out = {}
+    for a in load_accounts():
+        r = str(a.get("region", "")).upper()
+        out[r] = out.get(r, 0) + 1
+    return out
 
 @app.route("/healthz")
 def healthz():
@@ -1104,6 +1203,8 @@ def healthz():
                      for r, v in _session_cache.items()},
         "cooldowns": {r: int(t - time.time())
                       for r, t in _login_cooldown.items() if t > time.time()},
+        "login_errors": dict(_login_errors),
+        "accounts_per_region": _accounts_per_region(),
         "requires_special_account": REQUIRES_SPECIAL_ACCOUNT,
     })
 
