@@ -1,0 +1,1399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Free Fire Live Leaderboard and Player Search</title>
+<meta name="description" content="Live Free Fire rankings. See the top players right now, then look up any UID for level, rank, clan, avatar, banner and equipped bundle.">
+<meta name="theme-color" content="#0b1519">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1519'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23ff7a1a' stroke-width='2.6'/%3E%3Ccircle cx='16' cy='16' r='3.2' fill='%23ffbf3a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --ink:#0b1519; --deck:#112228; --deck-hi:#18323c; --deck-lo:#0d1b20;
+  --line:rgba(241,230,204,.12); --line-hi:rgba(241,230,204,.26);
+  --sand:#f1e6cc; --sand-dim:#b9c6c2; --sand-faint:#8aa09c;
+  --ember:#ff7a1a; --ember-hi:#ff9a45; --flame:#ffbf3a;
+  --gold:#f5c542; --silver:#d3dde0; --bronze:#d98a58;
+  --display:'Big Shoulders Display','Arial Narrow',Impact,sans-serif;
+  --body:'Hanken Grotesk',system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;background:var(--ink);color:var(--sand);font:400 16px/1.5 var(--body);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+body.lock{overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+button{background:none;border:0;padding:0;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--flame);outline-offset:3px}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+.ico{display:inline-flex;line-height:0}
+
+.bg{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(900px 480px at 78% -8%,rgba(255,122,26,.17),transparent 65%),
+    linear-gradient(rgba(241,230,204,.045) 1px,transparent 1px) 0 0/64px 64px,
+    linear-gradient(90deg,rgba(241,230,204,.045) 1px,transparent 1px) 0 0/64px 64px;
+  -webkit-mask-image:linear-gradient(#000 0,#000 35%,transparent 85%);
+  mask-image:linear-gradient(#000 0,#000 35%,transparent 85%)}
+main,.foot{position:relative;z-index:1}
+
+.plate{--c:14px;--bd:var(--line);--fill:var(--deck);position:relative;background:var(--bd);
+  clip-path:polygon(var(--c) 0,100% 0,100% calc(100% - var(--c)),calc(100% - var(--c)) 100%,0 100%,0 var(--c))}
+.plate::before{content:"";position:absolute;inset:1px;z-index:-1;background:var(--fill);
+  clip-path:polygon(calc(var(--c) - .59px) 0,100% 0,100% calc(100% - var(--c) + .59px),calc(100% - var(--c) + .59px) 100%,0 100%,0 calc(var(--c) - .59px))}
+.plate:focus-visible{outline:2px solid var(--flame);outline-offset:-5px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 24px;background:var(--ember);color:#1b0e03;font-weight:700;transition:background .15s;
+  touch-action:manipulation;
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+.btn:hover{background:var(--ember-hi)}
+.btn:focus-visible{outline:2px solid #1b0e03;outline-offset:-5px}
+.btn-sm{min-height:40px;padding:0 16px;font-size:15px;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:4px;background:rgba(0,0,0,.45);color:var(--sand);font-size:13px;font-weight:600;white-space:nowrap}
+.icon-btn{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;border:1px solid var(--line-hi);color:var(--sand-dim);transition:color .15s,border-color .15s;touch-action:manipulation}
+.icon-btn:hover{color:var(--sand);border-color:var(--ember)}
+.icon-btn:disabled{cursor:progress}
+.icon-btn.spin svg{animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.topbar{position:sticky;top:0;z-index:20;background:rgba(11,21,25,.84);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.topbar-in{max-width:1120px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:12px;font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:.04em;text-transform:uppercase;line-height:1}
+.brand .mark{color:var(--sand);flex:none}
+.top-right{display:flex;align-items:center;gap:10px}
+.status{display:flex;align-items:center;gap:8px;padding:6px 14px;border:1px solid var(--line-hi);border-radius:999px;font-size:13px;color:var(--sand-dim);white-space:nowrap}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--ember);animation:pulse 2s ease-in-out infinite}
+.status[data-mode="wait"] .pulse{background:var(--sand-faint);animation:none}
+.status[data-mode="error"] .pulse{background:#ff6b57;animation:none}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,122,26,.55)}50%{box-shadow:0 0 0 6px rgba(255,122,26,0)}}
+
+.hero{padding-top:46px;position:relative;z-index:2}
+.hero h1{margin:0;font-family:var(--display);font-weight:900;font-size:clamp(48px,9vw,96px);line-height:.9;text-transform:uppercase}
+.hero p{margin:16px 0 0;max-width:54ch;color:var(--sand-dim);font-size:17px}
+.finder{--c:12px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:stretch;max-width:780px;margin-top:28px}
+.finder-input{display:flex;align-items:center;gap:12px;padding:0 18px;min-height:58px;color:var(--sand-dim)}
+.finder-input:focus-within{box-shadow:inset 0 -3px 0 var(--flame)}
+.finder-input input{flex:1;min-width:0;background:transparent;border:0;outline:none;font-size:17px;color:var(--sand)}
+.finder-input input::placeholder{color:var(--sand-faint)}
+.finder-region select{appearance:none;-webkit-appearance:none;height:100%;min-height:58px;padding:0 40px 0 16px;background:transparent;border:0;border-left:1px solid var(--line);font-size:15px;color:var(--sand-dim);cursor:pointer;outline:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23b9c6c2' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center}
+.finder-region option{background:#112228;color:#f1e6cc}
+.finder-region{display:flex;min-width:170px}
+.finder-region .cs{height:100%}
+.finder-region .cs-btn{min-height:58px;padding:0 16px;border-left:1px solid var(--line);color:var(--sand-dim);gap:14px}
+.finder .btn{margin:1px 1px 1px 0;clip-path:none;padding:0 28px}
+
+.stage{position:relative;margin-top:30px;padding:34px 0 30px;overflow:clip}
+.zone{position:absolute;left:50%;top:50%;width:min(980px,150vw);aspect-ratio:1;translate:-50% -50%;border-radius:50%;border:1px dashed rgba(241,230,204,.16);pointer-events:none;z-index:0}
+.zone::after{content:"";position:absolute;inset:14%;border-radius:50%;border:1px solid rgba(255,122,26,.24);background:radial-gradient(circle,rgba(255,122,26,.10),transparent 62%)}
+.podium{position:relative;z-index:1;display:grid;grid-template-columns:1fr 1.18fr 1fr;grid-template-areas:"second first third";gap:18px;align-items:end}
+.slot-1{grid-area:first}.slot-2{grid-area:second}.slot-3{grid-area:third}
+.slot{filter:drop-shadow(0 16px 24px rgba(0,0,0,.4))}
+.slot-1{filter:drop-shadow(0 16px 24px rgba(0,0,0,.4)) drop-shadow(0 0 30px rgba(245,197,66,.18))}
+.tier-1{--tier:var(--gold);--tier-bd:rgba(245,197,66,.85)}
+.tier-2{--tier:var(--silver);--tier-bd:rgba(211,221,224,.7)}
+.tier-3{--tier:var(--bronze);--tier-bd:rgba(217,138,88,.75)}
+.pod{--c:20px;--bd:var(--tier-bd,var(--line));display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-end;width:100%;min-height:300px;padding:0 22px 22px;text-align:left;overflow:hidden;transition:transform .15s;touch-action:manipulation}
+.slot-1 .pod{min-height:376px}
+.slot-2 .pod{min-height:332px}
+.pod:hover{transform:translateY(-3px)}
+.pod-banner{position:absolute;top:0;left:0;width:100%;height:62%;object-fit:cover;z-index:0}
+.pod.is-broken{background-image:none}
+.pod-scrim{position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(17,34,40,0) 0,rgba(17,34,40,.35) 28%,var(--deck) 60%)}
+.pod-rank{position:absolute;top:8px;left:20px;z-index:2;font-family:var(--display);font-weight:900;font-size:78px;line-height:1;color:transparent;-webkit-text-stroke:2px var(--tier)}
+.slot-1 .pod-rank{font-size:100px}
+.badge{position:absolute;top:18px;right:20px;z-index:2;padding:2px 12px;background:var(--gold);color:#241a02;font-family:var(--display);font-weight:800;font-size:17px;letter-spacing:.04em;text-transform:uppercase;
+  clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)}
+.crown{position:relative;z-index:2;color:var(--gold);margin-bottom:-4px}
+.pod .avatar{--s:92px;--ring:var(--tier);position:relative;z-index:2;border-width:3px}
+.slot-1 .avatar{--s:116px}
+.pod-name{position:relative;z-index:2;margin-top:14px;font-weight:800;font-size:27px;line-height:1.1;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.slot-1 .pod-name{font-size:34px}
+.uid{position:relative;z-index:2;font-size:13px;color:var(--sand-dim);font-variant-numeric:tabular-nums}
+.pod-score{position:relative;z-index:2;display:flex;align-items:baseline;gap:8px;margin-top:12px}
+.pod-score strong{font-family:var(--display);font-weight:900;font-size:46px;line-height:1;color:var(--tier);font-variant-numeric:tabular-nums}
+.slot-1 .pod-score strong{font-size:60px}
+.pod-score span{font-size:14px;color:var(--sand-dim)}
+
+@keyframes rise{from{translate:0 38px;opacity:0}to{translate:0 0;opacity:1}}
+@keyframes closein{from{scale:1.38;opacity:0}to{scale:1;opacity:1}}
+.stage.intro .zone{animation:closein 1.5s cubic-bezier(.2,.7,.2,1) both}
+.stage.intro .slot{animation:rise .65s cubic-bezier(.2,.8,.2,1) both}
+.stage.intro .slot-3{animation-delay:.05s}
+.stage.intro .slot-2{animation-delay:.18s}
+.stage.intro .slot-1{animation-delay:.32s}
+
+.avatar{--s:52px;position:relative;flex:none;display:grid;place-items:center;width:var(--s);height:var(--s);border-radius:50%;background:var(--deck-hi);border:2px solid var(--ring,var(--line-hi));overflow:hidden}
+.avatar img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover}
+.avatar.is-broken img{display:none}
+.avatar.is-broken::after{content:attr(data-initial);font-family:var(--display);font-weight:800;font-size:calc(var(--s) * .46);color:var(--sand-faint)}
+
+.board{padding-top:26px}
+.board-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:14px}
+.board-head h2{margin:0;font-family:var(--display);font-weight:800;font-size:34px;line-height:1;text-transform:uppercase}
+.count{margin:6px 0 0;color:var(--sand-dim);font-size:14px}
+.field{--c:9px;display:flex;align-items:center;gap:10px;width:min(100%,320px);min-height:44px;padding:0 14px;color:var(--sand-dim);position:relative}
+.field:focus-within{--bd:var(--flame)}
+.field input{flex:1;min-width:0;background:transparent;border:0;outline:none;color:var(--sand);font-size:15px}
+.field input::placeholder{color:var(--sand-faint)}
+.board-tools{display:flex;flex-wrap:wrap;gap:10px}
+.season-field{width:min(100%,210px)}
+.mode-field{width:min(100%,190px)}
+.region-field{width:min(100%,200px)}
+
+.mode-tabs-wrap{margin-top:34px;display:flex;justify-content:center}
+.mode-tabs{display:inline-flex;align-items:center;gap:6px;padding:6px;background:var(--deck-lo);border:1px solid var(--line-hi);border-radius:12px}
+.mode-tab{display:inline-flex;align-items:center;gap:10px;min-height:46px;padding:0 24px;border-radius:8px;font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:.04em;text-transform:uppercase;color:var(--sand-dim);transition:all .15s ease;cursor:pointer;touch-action:manipulation}
+.mode-tab:hover{color:var(--sand);background:rgba(241,230,204,.06)}
+.mode-tab.active{background:var(--ember);color:#1b0e03;box-shadow:0 2px 14px rgba(255,122,26,.38)}
+.mode-tab svg{flex:none}
+
+.rows{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.row{--c:12px;display:grid;grid-template-columns:64px 52px minmax(0,1fr) auto auto;align-items:center;column-gap:14px;width:100%;min-height:76px;padding:12px 20px 12px 0;text-align:left;overflow:hidden;transition:transform .15s;touch-action:manipulation}
+.row:hover{--bd:rgba(255,122,26,.75);--fill:var(--deck-hi);transform:translateX(4px)}
+.row-banner{position:absolute;right:0;top:0;width:60%;height:100%;object-fit:cover;opacity:.42;z-index:0;-webkit-mask-image:linear-gradient(90deg,transparent,#000 80%);mask-image:linear-gradient(90deg,transparent,#000 80%)}
+.row.is-broken .row-banner{display:none}
+.row-rank,.row-id,.row .lvl,.pts{position:relative;z-index:1}
+.row .avatar{z-index:1}
+.row-rank{font-family:var(--display);font-weight:800;font-size:28px;color:var(--sand-dim);text-align:center;font-variant-numeric:tabular-nums}
+.row-id{display:grid;gap:1px;min-width:0}
+.row-name{font-weight:700;font-size:18px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pts{text-align:right;line-height:1}
+.pts strong{display:block;font-family:var(--display);font-weight:800;font-size:30px;color:var(--flame);font-variant-numeric:tabular-nums;text-shadow:0 2px 10px rgba(0,0,0,.75)}
+.pts span{display:block;margin-top:3px;font-size:12px;color:var(--sand-dim);text-shadow:0 1px 6px rgba(0,0,0,.8)}
+.empty{padding:34px 4px;color:var(--sand-dim);max-width:52ch}
+.empty b{display:block;margin-bottom:4px;color:var(--sand);font-size:18px}
+.notice{--c:16px;max-width:560px;padding:28px;margin:10px 0}
+.notice h3{margin:0 0 6px;font-family:var(--display);font-weight:800;font-size:30px;line-height:1.05;text-transform:uppercase}
+.notice p{margin:0 0 18px;color:var(--sand-dim)}
+
+.skel{display:block;background:linear-gradient(90deg,var(--deck-hi) 0,#21424e 50%,var(--deck-hi) 100%);background-size:220% 100%;animation:shimmer 1.4s linear infinite}
+@keyframes shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+.skel.disc{width:52px;height:52px;border-radius:50%}
+.skel.bar{height:14px;border-radius:4px}
+.skel.w30{width:30%}.skel.w40{width:40%}.skel.w60{width:60%}
+.row.skeleton{cursor:default}
+.row.skeleton .skel.bar{margin:0 auto}
+.pod.skeleton{gap:12px;padding-bottom:26px}
+.pod.skeleton .skel.disc{width:92px;height:92px}
+.pod.skeleton .skel.bar{height:18px}
+
+.overlay{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(4,9,11,.8);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);opacity:0;visibility:hidden;transition:opacity .2s,visibility 0s .2s;touch-action:manipulation}
+.overlay.open{opacity:1;visibility:visible;transition:opacity .2s}
+#lightbox{z-index:110}
+.sheet{--c:22px;width:100%;max-width:760px;translate:0 18px;transition:translate .25s cubic-bezier(.2,.8,.2,1)}
+.overlay.open .sheet,.overlay.open .lb{translate:0 0}
+.sheet-scroll{max-height:min(92vh,880px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.x{position:absolute;top:14px;right:14px;z-index:5;width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:rgba(0,0,0,.55);border:1px solid var(--line-hi);transition:background .15s;touch-action:manipulation}
+.x:hover{background:var(--ember);color:#1b0e03}
+
+.sh-head{position:relative;display:flex;align-items:flex-end;min-height:216px;padding:24px;overflow:hidden;background:linear-gradient(135deg,var(--deck-hi),var(--deck-lo))}
+.sh-banner{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+.sh-head.is-broken .sh-banner{display:none}
+.sh-scrim{position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(11,21,25,.1),rgba(17,34,40,.9) 82%,var(--deck))}
+.sh-id{position:relative;z-index:2;display:flex;align-items:flex-end;gap:18px;min-width:0;padding-right:36px}
+.sh-head .avatar{--s:104px;--ring:var(--tier,var(--sand));border-width:3px}
+.sh-text{min-width:0}
+.sh-text h2{margin:0;font-weight:800;font-size:clamp(28px,5vw,40px);line-height:1.08;overflow-wrap:anywhere}
+.sh-sub{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.uid-copy{display:inline-flex;align-items:center;gap:8px;min-height:28px;padding:3px 10px;border-radius:4px;background:rgba(0,0,0,.5);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;transition:background .15s;touch-action:manipulation}
+.uid-copy:hover{background:rgba(255,122,26,.35)}
+.sheet-body{padding:6px 24px 28px}
+
+.sec-title{margin:28px 0 12px;font-family:var(--display);font-weight:800;font-size:24px;line-height:1;text-transform:uppercase}
+.score{display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));margin:20px 0 0;border-top:1px solid var(--line);border-left:1px solid var(--line)}
+.cell{padding:14px 16px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:rgba(0,0,0,.14);min-width:0}
+.cell dt{font-size:13px;color:var(--sand-dim)}
+.cell dd{margin:2px 0 0;font-family:var(--display);font-weight:800;font-size:36px;line-height:1.1;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.cell dd.is-text{font-family:var(--body);font-weight:700;font-size:20px;line-height:1.3;padding-top:6px}
+.cell .sub{display:block;margin-top:2px;font-size:13px;color:var(--sand-faint);font-variant-numeric:tabular-nums}
+.cell.hot dd{color:var(--flame)}
+.cell.wide{grid-column:span 2}
+
+.items{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px}
+.item{--c:10px;--fill:var(--deck-lo);display:flex;flex-direction:column;text-align:left;min-width:0;transition:transform .15s;touch-action:manipulation}
+.item:hover{--bd:var(--ember);transform:translateY(-2px)}
+.item.wide{grid-column:span 2}
+.item-art{position:relative;display:grid;place-items:center;aspect-ratio:1;overflow:hidden;background:radial-gradient(circle at 50% 42%,rgba(255,191,58,.2),transparent 68%)}
+.item.wide .item-art{aspect-ratio:2/1}
+.item-art img{width:78%;height:78%;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,0,0,.5))}
+.item.round .item-art img{width:70%;height:70%;border-radius:50%;object-fit:cover;border:2px solid var(--line-hi);filter:none}
+.item.wide .item-art img{width:100%;height:100%;object-fit:cover;filter:none}
+.item-art.is-broken img{display:none}
+.item-art.is-broken::after{content:"No preview";font-size:12px;color:var(--sand-faint)}
+.item-cap{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:8px 10px 10px;font-size:13px;color:var(--sand-dim)}
+.item-cap b{color:var(--sand);font-weight:700}
+.item-cap .id{font-size:12px;color:var(--sand-faint);font-variant-numeric:tabular-nums}
+.item.skeleton{cursor:default}
+.item.skeleton .item-art{aspect-ratio:1}
+.item.skeleton .skel.bar{width:70%}
+.duo-partner{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:4px}
+.duo-partner .who{flex:1;min-width:0}
+.duo-partner b{display:block;font-size:19px;line-height:1.25;overflow-wrap:anywhere}
+.duo-partner .uid{position:static}
+.items-note{margin:12px 0 0;font-size:14px;color:var(--sand-dim)}
+
+.lb{--c:20px;position:relative;width:min(92vw,440px);padding:22px 22px 24px;translate:0 18px;transition:translate .25s cubic-bezier(.2,.8,.2,1)}
+.lb .x{top:12px;right:12px}
+.lb-art{position:relative;display:grid;place-items:center;aspect-ratio:1;margin-bottom:18px;background:radial-gradient(circle at 50% 45%,rgba(255,191,58,.26),transparent 68%)}
+.lb-art img{width:88%;height:88%;object-fit:contain;filter:drop-shadow(0 10px 18px rgba(0,0,0,.55))}
+.lb-art.round img{width:70%;height:70%;border-radius:50%;object-fit:cover;border:3px solid var(--line-hi);filter:none}
+.lb-art.wide{aspect-ratio:2/1}
+.lb-art.wide img{width:100%;height:100%;object-fit:cover;filter:none}
+.lb-art.is-broken img{display:none}
+.lb-art.is-broken::after{content:"No preview available";font-size:14px;color:var(--sand-faint)}
+.lb-meta{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.lb-meta h3{margin:0;font-family:var(--display);font-weight:800;font-size:30px;line-height:1;text-transform:uppercase}
+.lb-meta p{margin:4px 0 0;font-size:14px;color:var(--sand-dim);font-variant-numeric:tabular-nums}
+
+.foot{margin-top:56px;padding-top:24px;padding-bottom:44px;border-top:1px solid var(--line);color:var(--sand-faint);font-size:14px}
+.foot p{margin:0 0 6px;max-width:70ch}
+.toasts{position:fixed;left:50%;bottom:22px;translate:-50% 0;z-index:200;display:grid;gap:8px;justify-items:center;pointer-events:none;width:max-content;max-width:92vw}
+.toast{padding:10px 16px;border-radius:6px;background:var(--sand);color:#1b1407;font-weight:600;font-size:14px;box-shadow:0 10px 28px rgba(0,0,0,.45);animation:toast .22s ease-out}
+.toast.warn{background:var(--flame)}
+.toast.error{background:#ff8a78}
+@keyframes toast{from{translate:0 10px;opacity:0}to{translate:0 0;opacity:1}}
+
+.cs{position:relative;flex:1;min-width:0;display:flex}
+.cs-btn{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  width:100%;min-height:42px;padding:0;text-align:left;color:var(--sand);
+  font-size:15px;line-height:1.2;cursor:pointer;border-radius:2px;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.cs-btn:disabled{cursor:progress;color:var(--sand-faint)}
+.cs-btn .ico{flex:none;color:var(--sand-dim);transition:transform .18s ease,color .18s}
+.cs[data-open] .cs-btn .ico{transform:rotate(180deg);color:var(--flame)}
+.cs-btn:focus-visible{outline:none;box-shadow:inset 0 -2px 0 var(--flame)}
+.cs-val{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.cs-pop{position:fixed;z-index:60;left:0;top:0;padding:6px;
+  background:var(--deck-hi);border:1px solid var(--line-hi);
+  box-shadow:0 20px 44px rgba(0,0,0,.6);
+  clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+  overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+  animation:csIn .16s cubic-bezier(.2,.8,.2,1) both}
+@keyframes csIn{from{opacity:0;translate:0 -6px}to{opacity:1;translate:0 0}}
+.cs-list{list-style:none;margin:0;padding:0}
+.cs-backdrop,.cs-title{display:none}
+.cs-opt{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  min-height:42px;padding:0 12px;border-radius:6px;font-size:15px;color:var(--sand-dim);
+  white-space:nowrap;cursor:pointer;user-select:none;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.cs-opt.is-active{background:rgba(241,230,204,.09);color:var(--sand)}
+.cs-opt[aria-selected="true"]{color:var(--flame);font-weight:700}
+.cs-opt[aria-selected="true"]::after{content:"";width:7px;height:7px;border-radius:50%;
+  background:var(--flame);flex:none}
+
+.native-select{
+  position:absolute!important;
+  width:1px!important;height:1px!important;
+  margin:-1px!important;padding:0!important;
+  border:0!important;opacity:0!important;
+  pointer-events:none!important;
+  overflow:hidden!important;
+  clip:rect(0 0 0 0)!important;
+  clip-path:inset(50%)!important;
+  white-space:nowrap!important;
+}
+@media (hover: none) and (pointer: coarse){
+  .native-select{display:none!important;}
+}
+
+@media (max-width:720px){
+  .topbar-in{padding:8px 16px}
+  .brand{font-size:18px;gap:10px}
+  .status{padding:5px 10px;font-size:12px}
+  .wrap{padding:0 16px}
+  .hero{padding-top:30px}
+  .hero p{font-size:16px}
+  .finder{grid-template-columns:minmax(0,1fr) auto}
+  .finder-input{grid-column:1/-1;border-bottom:1px solid var(--line)}
+  .finder-region select{border-left:0;padding-left:18px}
+  .finder-region{min-width:0}
+  .finder-region .cs-btn{border-left:0;padding:0 18px}
+  .finder .btn{width:100%}
+  .stage{padding:24px 0}
+  .podium{grid-template-columns:1fr 1fr;grid-template-areas:"first first" "second third";gap:12px}
+  .slot-1 .pod{min-height:340px}
+  .slot-2 .pod,.slot-3 .pod{min-height:270px;padding:0 14px 16px}
+  .pod .avatar{--s:70px}
+  .slot-1 .avatar{--s:104px}
+  .slot-2 .pod-rank,.slot-3 .pod-rank{font-size:56px;left:12px}
+  .slot-1 .pod-rank{font-size:84px}
+  .pod-name{font-size:20px}
+  .slot-1 .pod-name{font-size:30px}
+  .pod-score strong{font-size:34px}
+  .slot-1 .pod-score strong{font-size:52px}
+  .row{grid-template-columns:42px 46px minmax(0,1fr) auto;column-gap:10px;padding-right:14px}
+  .row .lvl{display:none}
+  .row .avatar{--s:46px}
+  .row-rank{font-size:24px}
+  .row-name{font-size:16px}
+  .pts strong{font-size:26px}
+  .overlay{align-items:flex-end;padding:0}
+  .sheet{max-width:none;--c:18px;translate:0 40px}
+  .sheet-scroll{max-height:92vh;max-height:92dvh}
+  .sh-head{min-height:190px;padding:18px}
+  .sh-head .avatar{--s:84px}
+  .sh-id{gap:14px}
+  .sheet-body{padding:4px 16px 24px}
+  .cell dd{font-size:30px}
+  .board-tools{width:100%}
+  .board-tools .field,.board-tools .season-field,.board-tools .mode-field,.board-tools .region-field{flex:1 1 100%;width:100%}
+  .mode-tabs-wrap{margin-top:22px}
+  .mode-tabs{width:100%}
+  .mode-tab{flex:1;justify-content:center;padding:0 12px;font-size:16px}
+
+  .cs-pop{
+    left:12px!important;right:12px!important;
+    top:auto!important;bottom:12px!important;
+    bottom:calc(12px + env(safe-area-inset-bottom,0px))!important;
+    width:auto!important;min-width:0!important;
+    max-height:min(60vh,420px)!important;
+    max-height:min(60dvh,420px)!important;
+    animation:csUp .2s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes csUp{from{opacity:0;translate:0 10px}to{opacity:1;translate:0 0}}
+  .cs-backdrop{display:block;position:fixed;inset:0;z-index:59;background:rgba(4,9,11,.62);touch-action:none}
+  .cs-title{display:block;position:sticky;top:-6px;z-index:1;margin:-6px -6px 4px;padding:14px 16px 10px;
+    background:var(--deck-hi);border-bottom:1px solid var(--line-hi);
+    font-family:var(--display);font-weight:800;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--sand-dim)}
+  .cs-opt{min-height:48px;font-size:16px;padding:0 14px}
+}
+@media (max-width:380px){
+  .brand span{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+</style>
+</head>
+
+<body>
+<div class="bg" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="/" aria-label="Free Fire Leaderboard, home">
+      <svg class="mark" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3" opacity=".6"/><circle cx="16" cy="16" r="8" fill="none" stroke="#ff7a1a" stroke-width="2.6"/><circle cx="16" cy="16" r="3" fill="#ffbf3a"/></svg>
+      <span>Free Fire Leaderboard</span>
+    </a>
+    <div class="top-right">
+      <div class="status" id="status" data-mode="wait"><span class="pulse"></span><span id="status-text">Connecting</span></div>
+      <button class="icon-btn" id="refresh" type="button" aria-label="Refresh leaderboard">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="hero wrap">
+    <h1>Live leaderboard</h1>
+    <p>The top Free Fire players right now. Look up any UID and the region is found for you: level, clan, avatar, banner and equipped bundle.</p>
+
+    <form class="plate finder" id="finder" role="search" autocomplete="off" novalidate>
+      <label class="finder-input">
+        <span class="sr-only">Player UID</span>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="uid" name="uid" type="text" inputmode="numeric" placeholder="Enter a player UID" maxlength="16" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="finder-region">
+        <span class="sr-only">Region</span>
+        <select id="region" name="region" aria-label="Search region">
+          <option value="AUTO">Auto-detect region</option>
+          <option value="PK">Pakistan (PK)</option>
+          <option value="IND">India (IND)</option>
+          <option value="BD">Bangladesh (BD)</option>
+          <option value="ID">Indonesia (ID)</option>
+          <option value="SG">Singapore (SG)</option>
+          <option value="TH">Thailand (TH)</option>
+          <option value="VN">Vietnam (VN)</option>
+          <option value="TW">Taiwan (TW)</option>
+          <option value="BR">Brazil (BR)</option>
+          <option value="ME">Middle East (ME)</option>
+          <option value="NA">North America (NA)</option>
+          <option value="SAC">South America (SAC)</option>
+          <option value="EU">Europe (EU)</option>
+          <option value="CIS">CIS</option>
+        </select>
+      </div>
+      <button class="btn" type="submit">Find player</button>
+    </form>
+  </section>
+
+  <div class="wrap mode-tabs-wrap">
+    <nav class="mode-tabs" role="tablist" aria-label="Ranking Game Mode">
+      <button class="mode-tab active" id="tab-br" data-mode="BR" type="button" role="tab" aria-selected="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        <span>BR Rank</span>
+      </button>
+      <button class="mode-tab" id="tab-cs" data-mode="CS" type="button" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span>CS Rank</span>
+      </button>
+    </nav>
+  </div>
+
+  <section class="stage" id="stage" aria-label="Top three players">
+    <div class="zone" aria-hidden="true"></div>
+    <div class="wrap"><div class="podium" id="podium"></div></div>
+  </section>
+
+  <section class="board wrap" aria-label="Full ranking">
+    <div class="board-head">
+      <div>
+        <h2>Full ranking</h2>
+        <p class="count" id="count" aria-live="polite"></p>
+      </div>
+      <div class="board-tools">
+        <div class="plate field mode-field">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <select id="mode-select" aria-label="Game Mode">
+            <option value="BR">Battle Royale</option>
+            <option value="CS">Clash Squad</option>
+          </select>
+        </div>
+        <div class="plate field region-field">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
+          <select id="lb-region" aria-label="Leaderboard Server">
+            <option value="PK">Pakistan (PK)</option>
+            <option value="IND">India (IND)</option>
+            <option value="BD">Bangladesh (BD)</option>
+            <option value="ID">Indonesia (ID)</option>
+            <option value="SG">Singapore (SG)</option>
+            <option value="TH">Thailand (TH)</option>
+            <option value="VN">Vietnam (VN)</option>
+            <option value="TW">Taiwan (TW)</option>
+            <option value="BR">Brazil (BR)</option>
+            <option value="ME">Middle East (ME)</option>
+            <option value="NA">North America (NA)</option>
+            <option value="SAC">South America (SAC)</option>
+            <option value="EU">Europe (EU)</option>
+            <option value="CIS">CIS</option>
+          </select>
+        </div>
+        <div class="plate field season-field">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+          <select id="season" aria-label="Season" disabled><option>Season</option></select>
+        </div>
+        <label class="plate field">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>
+          <input id="filter" type="search" placeholder="Filter by name or UID" aria-label="Filter the ranking by name or UID" autocomplete="off">
+        </label>
+      </div>
+    </div>
+    <ul class="rows" id="rows"></ul>
+    <div id="notice"></div>
+    <noscript><div class="plate notice"><h3>JavaScript is off</h3><p>This page needs JavaScript to load the live rankings.</p></div></noscript>
+  </section>
+</main>
+
+<footer class="foot wrap">
+  <p>Rankings refresh automatically every few minutes.</p>
+  <p>Unofficial fan project. Not affiliated with or endorsed by Garena. Free Fire and related names and images belong to their owners.</p>
+</footer>
+
+<div class="overlay" id="profile">
+  <div class="plate sheet" role="dialog" aria-modal="true" aria-labelledby="sh-title">
+    <div class="sheet-scroll" id="sheet-scroll"></div>
+  </div>
+</div>
+
+<div class="overlay" id="lightbox">
+  <div class="plate lb" id="lb" role="dialog" aria-modal="true" aria-labelledby="lb-title"></div>
+</div>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const CDN = id => `https://cdn.jsdelivr.net/gh/ShahGCreator/icon@main/PNG/${id}.png`;
+  const REFRESH_MS = 120000;
+  const REGION_KEY = 'ff-search-region-v2';
+  const LB_REGION_KEY = 'ff-leaderboard-lb-region';
+  const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const SWAP_AVATAR_BANNER = true;
+
+  const $ = (sel, root = document) => root.querySelector(sel);
+
+  const fmt = v => {
+    if (v === null || v === undefined || v === '') return '-';
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toLocaleString() : String(v);
+  };
+
+  function h(tag, attrs, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k === 'text') el.textContent = v;
+      else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (const kid of kids.flat()) {
+      if (kid === null || kid === undefined || kid === false) continue;
+      el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+    }
+    return el;
+  }
+
+  const ICONS = {
+    copy: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>',
+    close: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    crown: '<svg viewBox="0 0 48 32" width="46" height="30" fill="currentColor" aria-hidden="true"><path d="M4 28L4 8L15 18L24 4L33 18L44 8L44 28Z"/></svg>',
+    caret: '<svg viewBox="0 0 12 8" width="12" height="8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 1.5l5 5 5-5"/></svg>'
+  };
+  const icon = name => { const s = h('span', { class: 'ico' }); s.innerHTML = ICONS[name]; return s; };
+
+  function pic(src, alt, cls, eager) {
+    const el = document.createElement('img');
+    if (cls) el.className = cls;
+    el.alt = alt || '';
+    el.decoding = 'async';
+    if (!eager) el.loading = 'lazy';
+    const markBroken = () => { if (el.parentElement) el.parentElement.classList.add('is-broken'); };
+    el.addEventListener('error', markBroken);
+    if (src) el.src = src; else queueMicrotask(markBroken);
+    return el;
+  }
+
+  function avatar(name, src, extra, eager) {
+    const initial = (String(name || '').trim()[0] || '?').toUpperCase();
+    return h('span', { class: 'avatar' + (extra ? ' ' + extra : ''), 'data-initial': initial }, pic(src, '', '', eager));
+  }
+
+  const idFromUrl = url => { const m = /\/(\d+)\.png$/.exec(url || ''); return m ? m[1] : ''; };
+  const cleanIds = list => {
+    const seen = new Set();
+    return (Array.isArray(list) ? list : []).map(String).filter(id => /^\d{6,12}$/.test(id) && !seen.has(id) && seen.add(id));
+  };
+  const imgsFromIds = (avatarId, bannerId) => {
+    const a = avatarId ? CDN(avatarId) : '';
+    const b = bannerId ? CDN(bannerId) : '';
+    return SWAP_AVATAR_BANNER ? { avatar: b, banner: a } : { avatar: a, banner: b };
+  };
+  const imgsOf = p => SWAP_AVATAR_BANNER
+    ? { avatar: p.banner_url || '', banner: p.avatar_url || '' }
+    : { avatar: p.avatar_url || '', banner: p.banner_url || '' };
+
+  async function getJSON(url, ms = 40000) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), ms);
+    try {
+      const res = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
+      let data = null;
+      try { data = await res.json(); } catch (e) {}
+      if (data === null) throw new Error('Bad response (HTTP ' + res.status + ')');
+      if (!res.ok && !data.error) throw new Error('HTTP ' + res.status);
+      return data;
+    } finally { clearTimeout(timer); }
+  }
+
+  const els = {
+    stage: $('#stage'), podium: $('#podium'), rows: $('#rows'), count: $('#count'), notice: $('#notice'),
+    status: $('#status'), statusText: $('#status-text'), refresh: $('#refresh'),
+    finder: $('#finder'), uid: $('#uid'), region: $('#region'), filter: $('#filter'), season: $('#season'),
+    lbRegion: $('#lb-region'),
+    modeSelect: $('#mode-select'), tabBr: $('#tab-br'), tabCs: $('#tab-cs'),
+    toasts: $('#toasts'), profile: $('#profile'), sheet: $('#sheet-scroll'), lightbox: $('#lightbox'), lb: $('#lb')
+  };
+
+  const state = {
+    mode: 'BR', season: null, currentSeason: null,
+    region: 'PK',
+    brCurrentSeason: 54, csCurrentSeason: 40,
+    minBrSeason: 17, minCsSeason: 5,
+    shownSeason: null, players: [], sig: '', query: '',
+    loading: false, rendered: false, introDone: false, updatedAt: 0,
+    details: new Map()
+  };
+  let profileKey = null;
+
+  function toast(msg, kind) {
+    const t = h('div', { class: 'toast ' + (kind || ''), text: msg });
+    els.toasts.append(t);
+    setTimeout(() => t.remove(), 2800);
+  }
+
+  async function copy(text, okMsg) {
+    let ok = false;
+    try { await navigator.clipboard.writeText(String(text)); ok = true; }
+    catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = String(text);
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+      document.body.append(ta);
+      ta.select();
+      try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+      ta.remove();
+    }
+    toast(ok ? okMsg : 'Could not copy. Select the text and copy it by hand.', ok ? '' : 'error');
+  }
+
+  const openStack = [];
+  let lastFocus = null;
+  let lbReturn = null;
+
+  function openOverlay(el) {
+    if (!openStack.length) lastFocus = document.activeElement;
+    if (!openStack.includes(el)) openStack.push(el);
+    el.classList.add('open');
+    document.body.classList.add('lock');
+    setTimeout(() => { const t = el.querySelector('[data-autofocus]'); if (t) t.focus({ preventScroll: true }); }, 40);
+  }
+
+  function closeOverlay(el) {
+    el.classList.remove('open');
+    const i = openStack.indexOf(el);
+    if (i > -1) openStack.splice(i, 1);
+    if (el === els.profile) profileKey = null;
+    if (el === els.lightbox && lbReturn && document.contains(lbReturn)) lbReturn.focus({ preventScroll: true });
+    else if (openStack.length) { const t = openStack[openStack.length - 1].querySelector('[data-autofocus]'); if (t) t.focus({ preventScroll: true }); }
+    else if (lastFocus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: true });
+    if (!openStack.length) document.body.classList.remove('lock');
+  }
+
+  [els.profile, els.lightbox].forEach(ov => ov.addEventListener('pointerdown', e => {
+    if (e.target === ov) closeOverlay(ov);
+  }));
+
+  document.addEventListener('keydown', e => {
+    const top = openStack[openStack.length - 1];
+    if (e.key === 'Escape' && top) { closeOverlay(top); return; }
+    if (e.key === 'Tab' && top) {
+      const f = [...top.querySelectorAll('button:not([disabled]), input, select, [href]')].filter(n => n.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (!top.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+      else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      return;
+    }
+    if (e.key === '/' && !top && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) { e.preventDefault(); els.uid.focus(); }
+  });
+
+  function countUp(el, value) {
+    const n = Number(value);
+    if (REDUCED || !Number.isFinite(n) || Math.abs(n) < 50 || value === '') { el.textContent = fmt(value); return; }
+    const t0 = performance.now(), dur = 650;
+    el.textContent = '0';
+    const tick = now => {
+      const k = Math.min(1, (now - t0) / dur);
+      el.textContent = fmt(Math.round(n * (1 - Math.pow(1 - k, 3))));
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  function statsBlock(m) {
+    const dl = h('dl', { class: 'score' });
+    m.stats.forEach(s => {
+      const dd = h('dd', { class: s.text ? 'is-text' : '' });
+      dl.append(h('div', { class: 'cell' + (s.hot ? ' hot' : '') + (s.wide ? ' wide' : '') },
+        h('dt', { text: s.label }), dd, s.sub ? h('span', { class: 'sub', text: s.sub }) : null));
+      if (s.text) dd.textContent = s.value;
+      else if (m.animate === false) dd.textContent = fmt(s.value);
+      else countUp(dd, s.value);
+    });
+    return dl;
+  }
+
+  function itemTile(item) {
+    const label = `${item.kind} ${item.id || ''}`.trim();
+    return h('button', {
+      class: 'plate item ' + item.shape, type: 'button', 'aria-label': 'View ' + label,
+      onclick: ev => openLightbox(item, ev.currentTarget)
+    },
+      h('span', { class: 'item-art' }, pic(item.url, label, '', false)),
+      h('span', { class: 'item-cap' }, h('b', { text: item.kind }), item.id ? h('span', { class: 'id', text: '#' + item.id }) : null));
+  }
+
+  function itemsBlock(m) {
+    const grid = h('div', { class: 'items' });
+    const it = m.items;
+    if (it.avatar.url) grid.append(itemTile({ kind: 'Avatar', id: it.avatar.id, url: it.avatar.url, shape: 'round' }));
+    if (it.banner.url) grid.append(itemTile({ kind: 'Banner', id: it.banner.id, url: it.banner.url, shape: 'wide' }));
+    if (m.itemsState === 'loading') {
+      for (let i = 0; i < 6; i++) {
+        grid.append(h('div', { class: 'plate item skeleton', 'aria-hidden': 'true' },
+          h('span', { class: 'item-art skel' }), h('span', { class: 'item-cap' }, h('span', { class: 'skel bar' }))));
+      }
+    } else {
+      it.outfit.forEach(o => grid.append(itemTile({ kind: 'Outfit', id: o.id, url: o.url, shape: 'piece' })));
+      (it.weapons || []).forEach(o => grid.append(itemTile({ kind: 'Weapon skin', id: o.id, url: o.url, shape: 'piece' })));
+    }
+    const note = m.itemsState === 'none' ? h('p', { class: 'items-note', text: 'No equipped bundle items were found for this player.' }) : null;
+    return h('section', {}, h('h3', { class: 'sec-title', text: 'Avatar, banner and bundle' }), grid, note);
+  }
+
+  function duoBlock(du) {
+    const title = h('h3', { class: 'sec-title', text: 'Dynamic Duo' });
+    if (du.state === 'loading') {
+      const dl = h('dl', { class: 'score', 'aria-hidden': 'true' });
+      for (let i = 0; i < 4; i++) dl.append(h('div', { class: 'cell' }, h('span', { class: 'skel bar w60' }), h('span', { class: 'skel bar w40', style: 'margin-top:12px' })));
+      return h('section', {}, title, dl);
+    }
+    if (du.state === 'error') return h('section', {}, title, h('p', { class: 'items-note', text: "Couldn't load duo info. " + (du.message || '') }));
+    if (du.state === 'none') return h('section', {}, title, h('p', { class: 'items-note', text: 'This player has no Dynamic Duo partner.' }));
+
+    const name = du.partner_nickname || 'Unknown player';
+    const pim = imgsFromIds(du.partner_avatar_id, du.partner_banner_id);
+    const partner = h('div', { class: 'duo-partner' },
+      avatar(name, pim.avatar, '', false),
+      h('div', { class: 'who' }, h('b', { text: name }),
+        h('span', { class: 'uid', text: 'UID ' + du.partner_uid + (du.partner_region ? ' \u00B7 ' + du.partner_region : '') })),
+      h('button', { class: 'btn btn-sm', type: 'button', onclick: () => { els.uid.value = du.partner_uid; searchPlayer(); } }, 'View profile'));
+    const stats = statsBlock({ animate: false, stats: [
+      { label: 'Duo score', value: du.score, hot: true },
+      { label: 'Duo level', value: 'Level ' + du.level, text: true },
+      { label: 'Days active', value: du.days_active },
+      { label: 'Status', value: du.status, text: true },
+      { label: 'Created (UTC)', value: du.created_at || 'Unknown', text: true, wide: true }
+    ] });
+    return h('section', {}, title, partner, stats);
+  }
+
+  function skeletonBody() {
+    const dl = h('dl', { class: 'score', 'aria-hidden': 'true' });
+    for (let i = 0; i < 4; i++) dl.append(h('div', { class: 'cell' }, h('span', { class: 'skel bar w60' }), h('span', { class: 'skel bar w40', style: 'margin-top:12px' })));
+    return h('div', { class: 'sheet-body' }, dl);
+  }
+
+  function showProfile(m) {
+    const fresh = profileKey !== m.key;
+    profileKey = m.key;
+    const tier = m.tier || 0;
+
+    const head = h('header', { class: 'sh-head' + (tier ? ' tier-' + tier : '') },
+      m.banner ? pic(m.banner, '', 'sh-banner', true) : null,
+      h('div', { class: 'sh-scrim' }),
+      h('button', { class: 'x', type: 'button', 'aria-label': 'Close profile', 'data-autofocus': '', onclick: () => closeOverlay(els.profile) }, icon('close')),
+      h('div', { class: 'sh-id' },
+        avatar(m.initial || m.name, m.avatar, '', true),
+        h('div', { class: 'sh-text' },
+          h('h2', { id: 'sh-title', text: m.name }),
+          h('div', { class: 'sh-sub' },
+            m.uid ? h('button', { class: 'uid-copy', type: 'button', 'aria-label': 'Copy UID ' + m.uid, onclick: () => copy(m.uid, 'UID copied') }, 'UID ' + m.uid, icon('copy')) : null,
+            (m.chips || []).map(c => h('span', { class: 'chip', text: c }))))));
+
+    let body;
+    if (m.state === 'loading') {
+      body = skeletonBody();
+    } else if (m.state === 'error') {
+      body = h('div', { class: 'sheet-body' },
+        h('div', { class: 'plate notice' }, h('h3', { text: m.title || "Couldn't load this player" }), h('p', { text: m.message }),
+          m.retry ? h('button', { class: 'btn btn-sm', type: 'button', onclick: m.retry }, 'Try again') : null));
+    } else {
+      body = h('div', { class: 'sheet-body' }, statsBlock(m), m.items ? itemsBlock(m) : null, m.duo ? duoBlock(m.duo) : null);
+    }
+
+    els.sheet.replaceChildren(head, body);
+    if (fresh) els.sheet.scrollTop = 0;
+    if (!els.profile.classList.contains('open')) openOverlay(els.profile);
+    else if (document.activeElement === document.body) { const t = $('[data-autofocus]', els.sheet); if (t) t.focus({ preventScroll: true }); }
+  }
+
+  function openLightbox(item, origin) {
+    lbReturn = origin || null;
+    els.lb.replaceChildren(
+      h('button', { class: 'x', type: 'button', 'aria-label': 'Close preview', 'data-autofocus': '', onclick: () => closeOverlay(els.lightbox) }, icon('close')),
+      h('div', { class: 'lb-art ' + item.shape }, pic(item.url, `${item.kind} ${item.id || ''}`.trim(), '', true)),
+      h('div', { class: 'lb-meta' },
+        h('div', {}, h('h3', { id: 'lb-title', text: item.kind }), item.id ? h('p', { text: 'Item ID ' + item.id }) : null),
+        item.id ? h('button', { class: 'btn btn-sm', type: 'button', onclick: () => copy(item.id, 'Item ID copied') }, 'Copy ID') : null));
+    openOverlay(els.lightbox);
+  }
+
+  async function getDetails(uid, region) {
+    const key = uid + '|' + region;
+    const hit = state.details.get(key);
+    if (hit && Date.now() - hit.t < 10 * 60 * 1000) return hit.data;
+    const data = await getJSON('/api/player_details/' + encodeURIComponent(uid) + '?region=' + encodeURIComponent(region));
+    if (data.error) throw new Error(data.error);
+    state.details.set(key, { t: Date.now(), data });
+    return data;
+  }
+
+  function openLeaderboardProfile(p) {
+    const im = imgsOf(p);
+    const lvl = p.level ? { label: 'Level', value: p.level } : { label: 'Level', value: '-', text: true };
+    const scoreLabel = state.mode === 'CS' ? 'CS Stars' : 'BR points';
+    const statsList = state.mode === 'CS' ? [
+      { label: scoreLabel, value: p.points, hot: true }, lvl,
+      { label: 'MVP count', value: p.stats.mvp_count || 0 },
+      { label: 'Streak wins', value: p.stats.streak_wins || 0 },
+      { label: 'Damage', value: p.stats.damage || 0 },
+      { label: 'Headshot kills', value: p.stats.head_shot_kills || 0 }
+    ] : [
+      { label: scoreLabel, value: p.points, hot: true }, lvl,
+      { label: 'Highest kills', value: p.stats.highest_kills || 0 },
+      { label: 'Damage', value: p.stats.damage || 0 }
+    ];
+
+    const base = {
+      key: 'lb-' + state.mode + '-' + state.region + '-' + p.uid,
+      name: p.name, uid: p.uid, tier: p.rank >= 1 && p.rank <= 3 ? p.rank : 0,
+      chips: [state.region + ' · ' + (state.mode === 'CS' ? 'CS Rank #' + p.rank : 'Rank #' + p.rank)],
+      avatar: im.avatar, banner: im.banner, state: 'ready', animate: true, stats: statsList,
+      items: { avatar: { id: idFromUrl(im.avatar), url: im.avatar }, banner: { id: idFromUrl(im.banner), url: im.banner }, outfit: [] },
+      itemsState: 'loading'
+    };
+    showProfile(base);
+
+    getDetails(p.uid, state.region).then(d => {
+      if (profileKey !== base.key) return;
+      const next = { ...base, animate: false };
+      if (d.avatar_id && d.banner_id) {
+        const ni = imgsFromIds(d.avatar_id, d.banner_id);
+        next.avatar = ni.avatar; next.banner = ni.banner;
+        next.items = { avatar: { id: idFromUrl(ni.avatar), url: ni.avatar }, banner: { id: idFromUrl(ni.banner), url: ni.banner }, outfit: [] };
+      }
+      next.items.outfit = cleanIds(d.outfit_ids).map(id => ({ id, url: CDN(id) }));
+      next.items.weapons = cleanIds(d.weapon_skin_ids).map(id => ({ id, url: CDN(id) }));
+      next.itemsState = (next.items.outfit.length || next.items.weapons.length) ? 'ready' : 'none';
+      showProfile(next);
+    }).catch(() => {
+      if (profileKey !== base.key) return;
+      showProfile({ ...base, animate: false, itemsState: 'none' });
+    });
+  }
+
+  function buildSearchModel(d) {
+    const im = imgsFromIds(d.avatar_id, d.banner_id);
+    const hasOutfit = Array.isArray(d.outfit_ids);
+    const outfit = cleanIds(d.outfit_ids).map(id => ({ id, url: CDN(id) }));
+    const weapons = cleanIds(d.weapon_skin_ids).map(id => ({ id, url: CDN(id) }));
+    const clan = d.clan_name && d.clan_name !== 'No Clan' ? d.clan_name : 'No clan';
+    const c = d.clan || {};
+    const clanSub = [
+      d.clan_id ? 'Clan ID ' + d.clan_id : '',
+      c.level ? 'Level ' + c.level : '',
+      c.members ? c.members + '/' + (c.capacity || '?') + ' members' : ''
+    ].filter(Boolean).join(' \u00B7 ');
+
+    const stats = [
+      { label: 'BR rank', value: d.br_rank, hot: true, sub: d.max_rank ? 'Highest ' + d.max_rank : '' },
+      { label: 'BR points', value: d.br_points, hot: true, sub: d.max_points ? 'Highest ' + fmt(d.max_points) : '' },
+      { label: 'CS rank', value: d.cs_rank, sub: d.cs_max_rank ? 'Highest ' + d.cs_max_rank : '' },
+      { label: 'CS points', value: d.cs_points },
+      { label: 'Level', value: d.level },
+      { label: 'Likes', value: d.likes },
+      { label: 'Experience', value: d.exp }
+    ];
+    if (d.credit_score) stats.push({ label: 'Credit score', value: d.credit_score });
+    if (d.diamond_cost) stats.push({ label: 'Diamonds spent', value: d.diamond_cost });
+    stats.push({ label: 'Created', value: d.created_at || 'Unknown', text: true });
+    if (d.last_login) stats.push({ label: 'Last login (UTC)', value: d.last_login, text: true });
+    stats.push({ label: 'Clan', value: clan, text: true, wide: true, sub: clanSub });
+    if (d.pet && d.pet.name) stats.push({ label: 'Pet', value: d.pet.name, text: true, sub: d.pet.level ? 'Level ' + d.pet.level : '' });
+    if (d.prime_level) stats.push({ label: 'Prime level', value: d.prime_level });
+    if (d.signature) stats.push({ label: 'Signature', value: d.signature, text: true, wide: true });
+    const style = [d.gender, d.language, d.mode_prefer ? 'Plays ' + d.mode_prefer : '', d.time_active, d.time_online,
+      ...(d.battle_tags || []), ...(d.social_tags || [])].filter(Boolean);
+    if (style.length) stats.push({ label: 'Style', value: style.join(' \u00B7 '), text: true, wide: true });
+
+    return {
+      key: 'search-' + d.uid, name: d.nickname || 'Unknown', uid: d.uid, tier: 0,
+      chips: d.detected ? ['Region ' + d.region, 'Auto-detected'] : ['Region ' + d.region],
+      avatar: im.avatar, banner: im.banner, state: 'ready', animate: true, stats,
+      items: { avatar: { id: idFromUrl(im.avatar), url: im.avatar }, banner: { id: idFromUrl(im.banner), url: im.banner }, outfit, weapons },
+      itemsState: !hasOutfit ? 'hidden' : (outfit.length || weapons.length) ? 'ready' : 'none'
+    };
+  }
+
+  async function searchPlayer() {
+    const uid = els.uid.value.replace(/\s+/g, '');
+    if (!/^\d{5,16}$/.test(uid)) { toast('Enter a UID using digits only.', 'warn'); els.uid.focus(); return; }
+    const region = els.region.value;
+    const regionLabel = region === 'AUTO' ? 'Detecting region' : 'Region ' + region;
+    try { localStorage.setItem(REGION_KEY, region); } catch (e) {}
+
+    const key = 'search-' + uid;
+    showProfile({ key, name: 'Finding player', initial: '?', uid, chips: [regionLabel], state: 'loading', avatar: '', banner: '' });
+    try {
+      const d = await getJSON(`/api/search?uid=${encodeURIComponent(uid)}&region=${encodeURIComponent(region)}`);
+      if (profileKey !== key) return;
+      if (d.error) throw new Error(d.error);
+      const model = buildSearchModel(d);
+      model.duo = { state: 'loading' };
+      showProfile(model);
+      const duoRegion = d.searched_via || d.region || 'AUTO';
+      getJSON('/api/duo/' + encodeURIComponent(d.uid) + '?region=' + encodeURIComponent(duoRegion))
+        .then(x => {
+          if (profileKey !== model.key) return;
+          const duo = x.error ? { state: 'error', message: x.error } : x.has_duo ? { ...x, state: 'ready' } : { state: 'none' };
+          showProfile({ ...model, animate: false, duo });
+        })
+        .catch(() => { if (profileKey === model.key) showProfile({ ...model, animate: false, duo: { state: 'error' } }); });
+    } catch (err) {
+      if (profileKey !== key) return;
+      const aborted = err && err.name === 'AbortError';
+      showProfile({
+        key, name: 'No profile loaded', initial: '!', uid, chips: [regionLabel], avatar: '', banner: '', state: 'error',
+        title: aborted ? 'The server took too long' : "Couldn't find this player",
+        message: aborted ? 'Try again in a moment.' : (err && err.message ? err.message : 'Check the UID and region, then try again.'),
+        retry: searchPlayer
+      });
+    }
+  }
+
+  function podiumCard(p, pos) {
+    const im = imgsOf(p);
+    const scoreUnit = state.mode === 'CS' ? 'stars' : 'points';
+    const btn = h('button', {
+      class: `plate pod tier-${pos}`, type: 'button',
+      'aria-label': `Rank ${p.rank}, ${p.name}, ${fmt(p.points)} ${scoreUnit}. Open profile`,
+      onclick: () => openLeaderboardProfile(p)
+    },
+      im.banner ? pic(im.banner, '', 'pod-banner', true) : null,
+      h('div', { class: 'pod-scrim' }),
+      h('span', { class: 'pod-rank', 'aria-hidden': 'true', text: p.rank }),
+      pos === 1 ? h('span', { class: 'badge', text: 'Booyah' }) : null,
+      pos === 1 ? h('span', { class: 'crown' }, icon('crown')) : null,
+      avatar(p.name, im.avatar, '', true),
+      h('span', { class: 'pod-name', text: p.name }),
+      h('span', { class: 'uid', text: 'UID ' + p.uid }),
+      h('span', { class: 'pod-score' }, h('strong', { text: fmt(p.points) }), h('span', { text: scoreUnit })));
+    return h('div', { class: 'slot slot-' + pos }, btn);
+  }
+
+  function rowItem(p) {
+    const im = imgsOf(p);
+    const scoreUnit = state.mode === 'CS' ? 'stars' : 'points';
+    return h('li', {}, h('button', {
+      class: 'plate row', type: 'button',
+      'aria-label': `Rank ${p.rank}, ${p.name}, ${fmt(p.points)} ${scoreUnit}. Open profile`,
+      onclick: () => openLeaderboardProfile(p)
+    },
+      im.banner ? pic(im.banner, '', 'row-banner', false) : null,
+      h('span', { class: 'row-rank', text: p.rank }),
+      avatar(p.name, im.avatar, '', false),
+      h('span', { class: 'row-id' }, h('span', { class: 'row-name', text: p.name }), h('span', { class: 'uid', text: 'UID ' + p.uid })),
+      h('span', { class: 'lvl' }, p.level ? h('span', { class: 'chip', text: 'Level ' + p.level }) : null),
+      h('span', { class: 'pts' }, h('strong', { text: fmt(p.points) }), h('span', { text: scoreUnit }))));
+  }
+
+  function renderSkeleton() {
+    els.stage.hidden = false;
+    els.podium.replaceChildren(...[1, 2, 3].map(n =>
+      h('div', { class: 'slot slot-' + n }, h('div', { class: 'plate pod skeleton', 'aria-hidden': 'true' },
+        h('span', { class: 'skel disc' }), h('span', { class: 'skel bar w60' }), h('span', { class: 'skel bar w40' })))));
+    els.rows.replaceChildren(...Array.from({ length: 8 }, () =>
+      h('li', {}, h('div', { class: 'plate row skeleton', 'aria-hidden': 'true' },
+        h('span', { class: 'skel bar w30' }), h('span', { class: 'skel disc' }), h('span', { class: 'skel bar w60' }), h('span'), h('span', { class: 'skel bar w30' })))));
+  }
+
+  const seasonLabel = () => {
+    const prefix = (state.region ? state.region + ' \u00B7 ' : '') + (state.mode === 'CS' ? 'Clash Squad \u00B7 ' : 'Battle Royale \u00B7 ');
+    return state.shownSeason ? `${prefix}Season ${state.shownSeason} \u00B7 ` : prefix;
+  };
+
+  function renderBoard() {
+    const all = state.players;
+    const q = state.query.trim().toLowerCase();
+    state.rendered = true;
+    if (!all.length) { showNotice('empty'); return; }
+    els.notice.replaceChildren();
+    els.podium.replaceChildren();
+    els.rows.replaceChildren();
+
+    let list;
+    if (q) {
+      els.stage.hidden = true;
+      list = all.filter(p => p.name.toLowerCase().includes(q) || p.uid.includes(q));
+      els.count.textContent = `${seasonLabel()}${list.length} of ${all.length} players match`;
+    } else {
+      els.stage.hidden = false;
+      all.slice(0, 3).forEach((p, i) => els.podium.append(podiumCard(p, i + 1)));
+      list = all.slice(3);
+      els.count.textContent = `${seasonLabel()}${all.length} players ranked`;
+      if (!state.introDone) {
+        state.introDone = true;
+        els.stage.classList.add('intro');
+        setTimeout(() => els.stage.classList.remove('intro'), 2300);
+      }
+    }
+    list.forEach(p => els.rows.append(rowItem(p)));
+    if (q && !list.length) {
+      els.rows.append(h('li', { class: 'empty' }, h('b', { text: `No players match \u201C${state.query.trim()}\u201D` }),
+        'Try part of a name or a full UID. To look up someone outside this ranking, use the search above.'));
+    }
+  }
+
+  function showNotice(kind, msg) {
+    const copyText = {
+      slow: ['Still waiting for rankings', 'The server has not returned a leaderboard yet. This page keeps checking, or you can try now.', 'Try now'],
+      error: ["Couldn't load the leaderboard", 'Check your connection, then try again.', 'Try again'],
+      empty: ['No ranked players yet', 'The leaderboard is empty right now. Check back in a few minutes.', 'Refresh'],
+      season: ['No ranking for this season', msg || 'The game server has no leaderboard for this season. Try another one.', 'Back to current season']
+    }[kind];
+    els.stage.hidden = true;
+    els.rows.replaceChildren();
+    els.count.textContent = '';
+    const action = kind === 'season' && state.currentSeason ? () => selectSeason(state.currentSeason) : () => loadLeaderboard();
+    els.notice.replaceChildren(h('div', { class: 'plate notice' },
+      h('h3', { text: copyText[0] }), h('p', { text: copyText[1] }),
+      h('button', { class: 'btn', type: 'button', onclick: action }, copyText[2])));
+  }
+
+  function setStatus(text, mode) { els.statusText.textContent = text; els.status.dataset.mode = mode; }
+
+  function normalize(list) {
+    return list.map((p, i) => ({
+      ...p,
+      rank: Number(p.rank) || i + 1,
+      uid: String(p.uid),
+      name: String(p.name === undefined || p.name === null ? 'Unknown' : p.name),
+      points: Number(p.points) || 0,
+      level: Number(p.level) || 0,
+      stats: p.stats && typeof p.stats === 'object' ? p.stats : {}
+    })).sort((a, b) => a.rank - b.rank);
+  }
+
+  let retryTimer = null;
+  let warmAttempts = 0;
+  let reqId = 0;
+
+  const minSeasonFor = mode => (mode === 'CS' ? state.minCsSeason : state.minBrSeason);
+
+  function fillSeasons(current) {
+    state.currentSeason = current;
+    const min = minSeasonFor(state.mode);
+    const opts = [];
+    for (let n = current; n >= min; n--) {
+      opts.push(h('option', { value: String(n), text: n === current ? `Season ${n} (current)` : `Season ${n}` }));
+    }
+    els.season.replaceChildren(...opts);
+    const want = state.season || current;
+    els.season.value = String(want >= min ? want : current);
+    els.season.disabled = false;
+  }
+
+  function selectMode(newMode) {
+    if (state.mode === newMode) return;
+    state.mode = newMode;
+    state.season = null;
+    state.shownSeason = null;
+    state.players = [];
+    state.sig = '';
+    state.rendered = false;
+    warmAttempts = 0;
+
+    if (els.modeSelect) els.modeSelect.value = newMode;
+    if (els.tabBr) {
+      els.tabBr.classList.toggle('active', newMode === 'BR');
+      els.tabBr.setAttribute('aria-selected', newMode === 'BR' ? 'true' : 'false');
+    }
+    if (els.tabCs) {
+      els.tabCs.classList.toggle('active', newMode === 'CS');
+      els.tabCs.setAttribute('aria-selected', newMode === 'CS' ? 'true' : 'false');
+    }
+
+    const cur = newMode === 'CS' ? state.csCurrentSeason : state.brCurrentSeason;
+    fillSeasons(cur);
+
+    els.count.textContent = '';
+    els.notice.replaceChildren();
+    renderSkeleton();
+    setStatus(`Loading ${state.region} · ${newMode === 'CS' ? 'Clash Squad' : 'Battle Royale'}`, 'wait');
+    loadLeaderboard(true);
+  }
+
+  function selectRegion(region) {
+    if (state.region === region) return;
+    state.region = region;
+    state.season = null;
+    state.shownSeason = null;
+    state.players = [];
+    state.sig = '';
+    state.rendered = false;
+    warmAttempts = 0;
+
+    try { localStorage.setItem(LB_REGION_KEY, region); } catch (e) {}
+
+    els.count.textContent = '';
+    els.notice.replaceChildren();
+    renderSkeleton();
+    setStatus(`Loading ${region} leaderboard`, 'wait');
+    loadLeaderboard(true);
+  }
+
+  function selectSeason(n) {
+    const cur = state.currentSeason;
+    if (!cur) return;
+    const min = minSeasonFor(state.mode);
+    if (!Number.isFinite(n) || n < min || n > cur) n = cur;
+    state.season = n === cur ? null : n;
+    els.season.value = String(n);
+    state.players = []; state.sig = ''; state.rendered = false; state.shownSeason = null;
+    warmAttempts = 0;
+    els.count.textContent = '';
+    els.notice.replaceChildren();
+    renderSkeleton();
+    setStatus(`Loading ${state.region} · ${state.mode === 'CS' ? 'CS' : 'BR'} season ${n}`, 'wait');
+    loadLeaderboard(true);
+  }
+
+  async function loadLeaderboard(force) {
+    if (state.loading && force !== true) return;
+    const id = ++reqId;
+    state.loading = true;
+    clearTimeout(retryTimer);
+    els.refresh.disabled = true;
+    els.refresh.classList.add('spin');
+    try {
+      const q = new URLSearchParams();
+      q.set('mode', state.mode);
+      q.set('region', state.region);
+      if (state.season) q.set('season', state.season);
+      const data = await getJSON('/api/leaderboard?' + q.toString());
+      if (id !== reqId) return;
+      if (data.current_br_season) state.brCurrentSeason = data.current_br_season;
+      if (data.current_cs_season) state.csCurrentSeason = data.current_cs_season;
+      if (data.current_season) fillSeasons(data.current_season);
+      if (data.status === 'success' && Array.isArray(data.players)) {
+        warmAttempts = 0;
+        state.shownSeason = data.season || state.currentSeason;
+        const players = normalize(data.players);
+        const sig = JSON.stringify([state.mode, state.region, state.shownSeason, players.map(p => [p.uid, p.rank, p.points, p.name, p.level])]);
+        if (sig !== state.sig || !state.rendered) { state.sig = sig; state.players = players; renderBoard(); }
+        state.updatedAt = Date.now();
+        const past = state.currentSeason && state.shownSeason !== state.currentSeason;
+        const modeTitle = state.mode === 'CS' ? 'CS' : 'BR';
+        setStatus(past
+          ? `${state.region} · ${modeTitle} S${state.shownSeason} final`
+          : `${state.region} · Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, 'live');
+      } else if (data.status === 'error') {
+        if (!state.players.length) showNotice(state.season ? 'season' : 'error', data.error);
+        setStatus(state.season ? 'No data' : 'Offline', 'error');
+      } else if (!state.players.length) {
+        warmAttempts++;
+        if (warmAttempts > 8) showNotice('slow');
+        setStatus('Waiting for data', 'wait');
+        retryTimer = setTimeout(loadLeaderboard, 4000);
+      }
+    } catch (err) {
+      if (id !== reqId) return;
+      if (!state.players.length) showNotice('error');
+      setStatus('Offline', 'error');
+    } finally {
+      if (id === reqId) {
+        state.loading = false;
+        els.refresh.disabled = false;
+        els.refresh.classList.remove('spin');
+      }
+    }
+  }
+
+  function enhanceSelect(sel, opts) {
+    if (!sel || sel.dataset.cs) return;
+    sel.dataset.cs = '1';
+    const name = (opts && opts.label) || sel.getAttribute('aria-label') || 'Options';
+
+    const valEl = h('span', { class: 'cs-val' });
+    const btn = h('button', {
+      class: 'cs-btn', type: 'button', role: 'combobox',
+      'aria-haspopup': 'listbox', 'aria-expanded': 'false',
+      'aria-controls': sel.id + '-list', 'aria-label': name
+    }, valEl, icon('caret'));
+    const list = h('ul', { class: 'cs-list', id: sel.id + '-list', role: 'listbox', 'aria-label': name });
+    const cs = h('div', { class: 'cs' }, btn);
+    const pop = h('div', { class: 'cs-pop', hidden: '' }, h('div', { class: 'cs-title', 'aria-hidden': 'true' }, name), list);
+    const bd = h('div', { class: 'cs-backdrop', hidden: '', 'aria-hidden': 'true', onclick: () => close() });
+
+    sel.after(cs);
+    document.body.append(bd, pop);
+    sel.classList.add('native-select');
+    sel.tabIndex = -1;
+    sel.setAttribute('aria-hidden', 'true');
+
+    let activeIdx = 0;
+    const options = () => [...sel.options];
+    const items = () => [...list.children];
+
+    function setActive(i, scroll) {
+      const all = items();
+      if (!all.length) return;
+      activeIdx = Math.max(0, Math.min(all.length - 1, i));
+      all.forEach((n, k) => n.classList.toggle('is-active', k === activeIdx));
+      btn.setAttribute('aria-activedescendant', all[activeIdx].id);
+      if (scroll) all[activeIdx].scrollIntoView({ block: 'nearest' });
+    }
+
+    function render() {
+      const os = options();
+      const cur = sel.value;
+      list.replaceChildren(...os.map((o, i) => h('li', {
+        class: 'cs-opt', role: 'option', id: sel.id + '-o' + i,
+        'aria-selected': o.value === cur ? 'true' : 'false',
+        'data-value': o.value,
+        onclick: () => commit(o.value)
+      }, o.textContent)));
+      const chosen = os.find(o => o.value === cur) || os[0];
+      valEl.textContent = chosen ? chosen.textContent : '';
+      btn.disabled = sel.disabled;
+      const i = os.findIndex(o => o.value === cur);
+      setActive(i < 0 ? 0 : i, false);
+    }
+
+    function place() {
+      const r = cs.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight, gap = 8;
+      pop.style.minWidth = Math.round(r.width) + 'px';
+      pop.style.maxHeight = Math.round(Math.min(340, vh * 0.6)) + 'px';
+      const pr = pop.getBoundingClientRect();
+      const below = vh - r.bottom - gap - 8;
+      const above = r.top - gap - 8;
+      if (pr.height > below && above > below) {
+        pop.style.top = 'auto';
+        pop.style.bottom = Math.round(vh - r.top + gap) + 'px';
+      } else {
+        pop.style.bottom = 'auto';
+        pop.style.top = Math.round(r.bottom + gap) + 'px';
+      }
+      const left = Math.min(Math.max(8, r.left), Math.max(8, vw - pr.width - 8));
+      pop.style.left = Math.round(left) + 'px';
+    }
+
+    function onScroll(e) {
+      if (pop.contains(e.target)) return;   // scrolling the option list must not re-layout the sheet
+      place();
+    }
+
+    function onDocDown(e) {
+      if (pop.contains(e.target) || cs.contains(e.target) || e.target === bd) return;  // backdrop closes on click so the tap can't hit what's underneath
+      close();
+    }
+
+    function open(fromBottom) {
+      if (sel.disabled || !pop.hidden) return;
+      render();
+      pop.style.visibility = 'hidden';
+      pop.hidden = false;
+      place();
+      pop.style.visibility = '';
+      bd.hidden = false;
+      cs.dataset.open = '1';
+      btn.setAttribute('aria-expanded', 'true');
+      setActive(fromBottom ? items().length - 1 : activeIdx, true);
+      document.addEventListener('pointerdown', onDocDown, true);
+      document.addEventListener('touchstart', onDocDown, { capture: true, passive: true });
+      window.addEventListener('scroll', onScroll, true);
+      window.addEventListener('resize', place);
+    }
+
+    function close() {
+      if (pop.hidden) return;
+      pop.hidden = true;
+      bd.hidden = true;
+      delete cs.dataset.open;
+      btn.setAttribute('aria-expanded', 'false');
+      btn.removeAttribute('aria-activedescendant');
+      document.removeEventListener('pointerdown', onDocDown, true);
+      document.removeEventListener('touchstart', onDocDown, true);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', place);
+    }
+
+    function commit(v) {
+      close();
+      if (sel.value !== v) {
+        sel.value = v;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      btn.focus({ preventScroll: true });
+    }
+
+    btn.addEventListener('click', () => { pop.hidden ? open(false) : close(); });
+
+    btn.addEventListener('keydown', e => {
+      const isOpen = !pop.hidden;
+      switch (e.key) {
+        case 'ArrowDown': e.preventDefault(); isOpen ? setActive(activeIdx + 1, true) : open(false); break;
+        case 'ArrowUp':   e.preventDefault(); isOpen ? setActive(activeIdx - 1, true) : open(true);  break;
+        case 'Home':      if (isOpen) { e.preventDefault(); setActive(0, true); } break;
+        case 'End':       if (isOpen) { e.preventDefault(); setActive(items().length - 1, true); } break;
+        case 'Enter':
+        case ' ':         e.preventDefault();
+                          if (isOpen) { const t = items()[activeIdx]; if (t) commit(t.dataset.value); }
+                          else open(false);
+                          break;
+        case 'Escape':    if (isOpen) { e.preventDefault(); close(); } break;
+        case 'Tab':       close(); break;
+      }
+    });
+
+    new MutationObserver(render).observe(sel, { childList: true, attributes: true, attributeFilter: ['disabled'] });
+    const vd = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+    Object.defineProperty(sel, 'value', {
+      configurable: true,
+      get() { return vd.get.call(this); },
+      set(v) { vd.set.call(this, v); render(); }
+    });
+
+    render();
+  }
+
+  /* ---------- Init ---------- */
+  try {
+    const saved = localStorage.getItem(REGION_KEY);
+    if (saved && [...els.region.options].some(o => o.value === saved)) els.region.value = saved;
+    const savedLb = localStorage.getItem(LB_REGION_KEY);
+    if (savedLb && [...els.lbRegion.options].some(o => o.value === savedLb)) {
+      els.lbRegion.value = savedLb;
+      state.region = savedLb;
+    }
+  } catch (e) {}
+
+  try {
+    enhanceSelect(els.modeSelect, { label: 'Game Mode' });
+    enhanceSelect(els.lbRegion, { label: 'Leaderboard Server' });
+    enhanceSelect(els.region, { label: 'Search Region' });
+    enhanceSelect(els.season, { label: 'Season' });
+  } catch (err) {
+    console.error('Custom select failed:', err);
+    els.modeSelect?.classList.remove('native-select');
+    els.lbRegion?.classList.remove('native-select');
+    els.region?.classList.remove('native-select');
+    els.season?.classList.remove('native-select');
+  }
+
+  els.finder.addEventListener('submit', e => { e.preventDefault(); searchPlayer(); });
+  els.refresh.addEventListener('click', () => loadLeaderboard());
+  els.season.addEventListener('change', () => selectSeason(Number(els.season.value)));
+  els.lbRegion.addEventListener('change', () => selectRegion(els.lbRegion.value));
+  if (els.modeSelect) els.modeSelect.addEventListener('change', () => selectMode(els.modeSelect.value));
+  if (els.tabBr) els.tabBr.addEventListener('click', () => selectMode('BR'));
+  if (els.tabCs) els.tabCs.addEventListener('click', () => selectMode('CS'));
+
+  let filterTimer = null;
+  els.filter.addEventListener('input', () => {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(() => { state.query = els.filter.value; if (state.players.length) renderBoard(); }, 120);
+  });
+
+  setInterval(() => { if (!document.hidden) loadLeaderboard(); }, REFRESH_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && Date.now() - state.updatedAt > REFRESH_MS) loadLeaderboard();
+  });
+
+  renderSkeleton();
+  loadLeaderboard();
+})();
+</script>
+</body>
+</html>
