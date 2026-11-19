@@ -1,0 +1,6 @@
+Flask
+requests
+urllib3
+pycryptodome
+google-play-scraper
+gunicorn
